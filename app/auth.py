@@ -42,3 +42,16 @@ def current_user_id():
     if st.session_state.session is None:
         return None
     return st.session_state.session.user.id
+
+
+st.write("---")
+st.subheader("Ainda não tem conta?")
+email_signup = st.text_input("Novo email")
+password_signup = st.text_input("Nova senha", type="password")
+if st.button("Criar conta"):
+    try:
+        res = sign_up(email_signup, password_signup)
+        st.success("Conta criada! Verifique seu e-mail e faça login.")
+    except Exception as e:
+        st.error(f"Erro ao criar conta: {e}")
+
