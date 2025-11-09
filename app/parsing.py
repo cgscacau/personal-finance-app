@@ -1,0 +1,87 @@
+import io, re, hashlib
+import pandas as pd
+import pdfplumber
+from ofxparse import OfxParser
+from datetime import datetime
+
+COLS = ["date","description","amount","account","raw"]
+DATE_FORMATS = ["%d/%m/%Y","%Y-%m-%d","%d-%m-%Y","%m/%d/%Y"]
+
+def _parse_dates(val):
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.strptime(str(val).strip(), fmt).date()
+        except:
+            pass
+    # tentar pandas
+    try:
+        return pd.to_datetime(val, dayfirst=True).date()
+    except:
+        return None
+
+def _hash_row(row):
+    h = hashlib.sha1(("|".join([str(row.get(c,"")) for c in ["date","description","amount","account"]])).encode()).hexdigest()
+    return h
+
+def from_csv(file_bytes, account_name):
+    df = pd.read_csv(io.BytesIO(file_bytes))
+    return normalize_df(df, account_name)
+
+def from_xlsx(file_bytes, account_name):
+    df = pd.read_excel(io.BytesIO(file_bytes))
+    return normalize_df(df, account_name)
+
+def from_ofx(file_bytes, account_name):
+    ofx = OfxParser.parse(io.BytesIO(file_bytes))
+    rows = []
+    for acct in ofx.accounts:
+        for tx in acct.statement.transactions:
+            rows.append({
+                "date": tx.date.date() if hasattr(tx.date, "date") else tx.date,
+                "description": tx.memo or tx.payee or "",
+                "amount": float(tx.amount),
+                "account": account_name,
+                "raw": tx.id or ""
+            })
+    df = pd.DataFrame(rows)
+    return finalize(df)
+
+def from_pdf(file_bytes, account_name):
+    rows = []
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text() or ""
+            for line in text.splitlines():
+                # heurística simples: DD/MM/AAAA ... valor
+                m = re.search(r'(\d{2}/\d{2}/\d{4}).*?([-+]?\d+[.,]\d{2})', line)
+                if m:
+                    date = _parse_dates(m.group(1))
+                    amount = float(m.group(2).replace(".","").replace(",","."))
+                    desc = line
+                    rows.append({"date": date, "description": desc, "amount": amount, "account": account_name, "raw": line})
+    df = pd.DataFrame(rows)
+    return finalize(df)
+
+def normalize_df(df, account_name):
+    # tentar mapear colunas comuns
+    mapping = {}
+    for col in df.columns:
+        lc = col.strip().lower()
+        if lc in ["data","date","dt","posted date","transaction date"]:
+            mapping["date"] = col
+        elif lc in ["descricao","descrição","description","memo","historico","histórico"]:
+            mapping["description"] = col
+        elif lc in ["valor","amount","ammount","valor (r$)","total"]:
+            mapping["amount"] = col
+    out = pd.DataFrame()
+    out["date"] = df[mapping["date"]].map(_parse_dates)
+    out["description"] = df[mapping["description"]].astype(str)
+    out["amount"] = pd.to_numeric(df[mapping["amount"]].astype(str).str.replace(".","").str.replace(",","."), errors="coerce")
+    out["account"] = account_name
+    out["raw"] = df[mapping["description"]].astype(str)
+    return finalize(out)
+
+def finalize(df):
+    df = df.dropna(subset=["date","amount"]).copy()
+    df["hash"] = df.apply(_hash_row, axis=1)
+    return df[["date","description","amount","account","raw","hash"]]
