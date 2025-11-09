@@ -46,6 +46,9 @@ if uploaded:
 
     if frames:
         df = pd.concat(frames, ignore_index=True).drop_duplicates("hash")
+        if df.empty:
+            st.warning("Nenhuma transação válida detectada. Verifique o layout do arquivo ou ajuste as regras de parsing.")
+            st.stop()
         # carregar regras do usuário
         rules = supa().table("categorization_rules").select("*").eq("user_id", uid).execute().data
         df = apply_rules(df, rules)
