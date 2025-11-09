@@ -47,12 +47,60 @@ def from_ofx(file_bytes, account_name):
     return finalize(df)
 
 def from_pdf(file_bytes, account_name):
+    """
+    Faz parsing de extratos PDF do Bradesco (Internet Banking)
+    ou usa o padrão genérico se outro formato.
+    """
+    import re, pdfplumber
+    rows = []
+    text_full = ""
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        for page in pdf.pages:
+            text_full += (page.extract_text() or "") + "\n"
+
+    # --- Caso seja Bradesco ---
+    if "Bradesco Internet Banking" in text_full:
+        # Divide por linhas
+        lines = [ln.strip() for ln in text_full.splitlines() if ln.strip()]
+        current_date = None
+        current_desc = ""
+        for ln in lines:
+            # detecta data
+            mdate = re.match(r"^(\d{2}/\d{2}/\d{2,4})", ln)
+            if mdate:
+                current_date = _parse_dates(mdate.group(1))
+                continue
+            # detecta descrição iniciada por Des: ou Pgto ou Pix
+            if ln.lower().startswith(("des:", "pgto", "pix", "trans", "fii", "rem:", "poup", "bco")):
+                current_desc = ln
+                continue
+            # detecta valor (usa vírgula decimal)
+            mval = re.search(r"([-+]?\d{1,3}(?:\.\d{3})*,\d{2})", ln)
+            if mval and current_date:
+                try:
+                    amount = float(mval.group(1).replace(".", "").replace(",", "."))
+                except:
+                    amount = None
+                # se houver palavra "Des" antes do número → débito
+                sign = -1 if re.search(r"\s-\s|\s-\d", ln) or "Des:" in current_desc else 1
+                rows.append({
+                    "date": current_date,
+                    "description": current_desc or ln,
+                    "amount": sign * amount if amount else None,
+                    "account": account_name,
+                    "raw": ln
+                })
+                current_desc = ""
+                current_date = None
+        df = pd.DataFrame(rows)
+        return finalize(df)
+
+    # --- Caso padrão genérico (outros bancos) ---
     rows = []
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
             text = page.extract_text() or ""
             for line in text.splitlines():
-                # heurística simples: DD/MM/AAAA ... valor
                 m = re.search(r'(\d{2}/\d{2}/\d{4}).*?([-+]?\d+[.,]\d{2})', line)
                 if m:
                     date = _parse_dates(m.group(1))
@@ -60,17 +108,10 @@ def from_pdf(file_bytes, account_name):
                         amount = float(m.group(2).replace(".","").replace(",","."))
                     except:
                         amount = None
-                    desc = line.strip()
-                    rows.append({
-                        "date": date,
-                        "description": desc,
-                        "amount": amount,
-                        "account": account_name,
-                        "raw": line
-                    })
+                    rows.append({"date": date, "description": line.strip(), "amount": amount, "account": account_name, "raw": line})
     df = pd.DataFrame(rows)
-    # mesmo que rows esteja vazio, finalize garante colunas
     return finalize(df)
+
 
 
 def normalize_df(df, account_name):
