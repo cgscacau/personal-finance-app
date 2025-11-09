@@ -56,32 +56,70 @@ def from_pdf(file_bytes, account_name):
                 m = re.search(r'(\d{2}/\d{2}/\d{4}).*?([-+]?\d+[.,]\d{2})', line)
                 if m:
                     date = _parse_dates(m.group(1))
-                    amount = float(m.group(2).replace(".","").replace(",","."))
-                    desc = line
-                    rows.append({"date": date, "description": desc, "amount": amount, "account": account_name, "raw": line})
+                    try:
+                        amount = float(m.group(2).replace(".","").replace(",","."))
+                    except:
+                        amount = None
+                    desc = line.strip()
+                    rows.append({
+                        "date": date,
+                        "description": desc,
+                        "amount": amount,
+                        "account": account_name,
+                        "raw": line
+                    })
     df = pd.DataFrame(rows)
+    # mesmo que rows esteja vazio, finalize garante colunas
     return finalize(df)
 
+
 def normalize_df(df, account_name):
-    # tentar mapear colunas comuns
     mapping = {}
     for col in df.columns:
-        lc = col.strip().lower()
+        lc = str(col).strip().lower()
         if lc in ["data","date","dt","posted date","transaction date"]:
             mapping["date"] = col
         elif lc in ["descricao","descrição","description","memo","historico","histórico"]:
             mapping["description"] = col
         elif lc in ["valor","amount","ammount","valor (r$)","total"]:
             mapping["amount"] = col
+
     out = pd.DataFrame()
-    out["date"] = df[mapping["date"]].map(_parse_dates)
-    out["description"] = df[mapping["description"]].astype(str)
-    out["amount"] = pd.to_numeric(df[mapping["amount"]].astype(str).str.replace(".","").str.replace(",","."), errors="coerce")
+    # preenche com None se faltarem colunas
+    out["date"] = df[mapping["date"]].map(_parse_dates) if "date" in mapping else None
+    out["description"] = df[mapping["description"]].astype(str) if "description" in mapping else ""
+    if "amount" in mapping:
+        out["amount"] = pd.to_numeric(
+            df[mapping["amount"]].astype(str).str.replace(".","").str.replace(",","."),
+            errors="coerce"
+        )
+    else:
+        out["amount"] = None
     out["account"] = account_name
-    out["raw"] = df[mapping["description"]].astype(str)
+    out["raw"] = df[mapping["description"]].astype(str) if "description" in mapping else ""
     return finalize(out)
 
+
 def finalize(df):
+    # garante colunas esperadas mesmo que o df venha vazio/incompleto
+    for col in ["date", "description", "amount", "account", "raw"]:
+        if col not in df.columns:
+            df[col] = None
+
+    # normalizações finais
+    df = df[["date","description","amount","account","raw"]].copy()
+    # tenta converter tipos (sem quebrar)
+    df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.date
+    df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
+
+    # se nada válido, retorna vazio com colunas e hash
+    if df[["date","amount"]].isna().all(axis=None):
+        df["hash"] = []
+        return df
+
     df = df.dropna(subset=["date","amount"]).copy()
+
+    # hash de deduplicação
     df["hash"] = df.apply(_hash_row, axis=1)
     return df[["date","description","amount","account","raw","hash"]]
+
