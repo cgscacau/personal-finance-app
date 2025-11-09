@@ -1,10 +1,12 @@
 import streamlit as st
-from app.auth import require_login, ensure_session
+from app.auth import require_login, current_user_id
 
 st.set_page_config(page_title="Gestor Financeiro", page_icon="💸", layout="wide")
-ensure_session()
+
+# exige login e cria sessão se necessário
 require_login()
+uid = current_user_id()
 
 st.sidebar.success("Autenticado!")
 st.title("💸 Gestor de Finanças Pessoais & Familiares")
-st.write("Use o menu lateral para navegar: importar, dashboard, lançamentos, regras, orçamentos e metas, configurações.")
+st.write("Use o menu lateral para navegar: Importar, Dashboard, Lançamentos, Regras, Orçamentos e Metas, Configurações.")
