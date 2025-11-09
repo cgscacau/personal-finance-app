@@ -2,7 +2,25 @@ import streamlit as st
 from supabase import create_client
 
 def supa():
-    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
+    client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
+
+    # ------------ ADIÇÃO IMPORTANTE: associar a sessão atual ------------
+    # st.session_state.session é o AuthResponse retornado pelo sign_in/sign_up
+    sess = st.session_state.get("session", None)
+    try:
+        # v2 do supabase-py
+        if sess and getattr(sess, "session", None):
+            access_token = sess.session.access_token
+            refresh_token = sess.session.refresh_token
+            client.auth.set_session(access_token, refresh_token)
+        # fallback (algumas versões usam set_auth)
+        elif sess and getattr(sess, "access_token", None):
+            client.auth.set_auth(sess.access_token)
+    except Exception:
+        pass
+    # --------------------------------------------------------------------
+
+    return client
 
 def insert(table, data: dict):
     return supa().table(table).insert(data).execute()
