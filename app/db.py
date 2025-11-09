@@ -4,21 +4,18 @@ from supabase import create_client
 def supa():
     client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
 
-    # ------------ ADIÇÃO IMPORTANTE: associar a sessão atual ------------
-    # st.session_state.session é o AuthResponse retornado pelo sign_in/sign_up
+    # --- garante que o client usa o token do usuário logado ---
     sess = st.session_state.get("session", None)
     try:
-        # v2 do supabase-py
         if sess and getattr(sess, "session", None):
             access_token = sess.session.access_token
             refresh_token = sess.session.refresh_token
             client.auth.set_session(access_token, refresh_token)
-        # fallback (algumas versões usam set_auth)
         elif sess and getattr(sess, "access_token", None):
             client.auth.set_auth(sess.access_token)
-    except Exception:
-        pass
-    # --------------------------------------------------------------------
+    except Exception as e:
+        st.warning(f"Falha ao vincular sessão: {e}")
+    # -----------------------------------------------------------
 
     return client
 
