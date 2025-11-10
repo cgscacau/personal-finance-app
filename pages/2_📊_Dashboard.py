@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from app.auth import require_login, current_user_id, logout
+from app.auth import require_login, current_user_id
 from app.db import supa
 from app.charts import by_category_bar, cashflow_line, category_treemap
 
@@ -54,13 +54,6 @@ st.markdown("""
         padding: 20px;
         margin: 10px 0;
     }
-    
-    /* Botão de logout estilizado */
-    .logout-section {
-        margin-top: 20px;
-        padding-top: 20px;
-        border-top: 1px solid rgba(49, 51, 63, 0.2);
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -96,21 +89,6 @@ def load_accounts(uid: str):
     except Exception as e:
         st.error(f"Erro ao carregar contas: {e}")
         return []
-
-
-def get_user_info(uid: str):
-    """Obtém informações do usuário autenticado."""
-    try:
-        # Tenta buscar email do usuário no Supabase Auth
-        user = supa().auth.get_user()
-        if user and user.user:
-            return {
-                "email": user.user.email,
-                "id": user.user.id
-            }
-        return {"email": "Usuário", "id": uid}
-    except:
-        return {"email": "Usuário", "id": uid}
 
 
 def filter_by_period(df: pd.DataFrame, period: str) -> pd.DataFrame:
@@ -361,19 +339,9 @@ st.title("📊 Dashboard Financeiro")
 st.markdown("---")
 
 # =========================================================
-# FILTROS E CONFIGURAÇÕES NO SIDEBAR
+# FILTROS NO SIDEBAR
 # =========================================================
 with st.sidebar:
-    # ========== INFORMAÇÕES DO USUÁRIO ==========
-    st.header("👤 Perfil")
-    
-    user_info = get_user_info(uid)
-    st.write(f"**Email:** {user_info['email']}")
-    st.caption(f"ID: {user_info['id'][:8]}...")
-    
-    st.markdown("---")
-    
-    # ========== FILTROS ==========
     st.header("⚙️ Filtros")
     
     # Seletor de período
@@ -405,38 +373,10 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # ========== OPÇÕES DE VISUALIZAÇÃO ==========
-    st.header("👁️ Visualização")
+    # Opções de visualização
+    st.subheader("👁️ Visualização")
     show_details = st.checkbox("Mostrar detalhes", value=True)
     show_advanced = st.checkbox("Gráficos avançados", value=True)
-    
-    st.markdown("---")
-    
-    # ========== AÇÕES DO USUÁRIO ==========
-    st.header("🔧 Ações")
-    
-    # Botão para atualizar dados
-    if st.button("🔄 Atualizar Dados", use_container_width=True):
-        st.rerun()
-    
-    # Espaço
-    st.markdown("<div class='logout-section'></div>", unsafe_allow_html=True)
-    
-    # Botão de logout
-    st.subheader("🚪 Sair")
-    
-    if st.button("🔓 Fazer Logout", type="primary", use_container_width=True):
-        logout()
-        st.success("✅ Logout realizado com sucesso!")
-        st.info("👋 Redirecionando para a página de login...")
-        st.rerun()
-    
-    # Link para trocar de conta (limpa sessão e volta pro login)
-    if st.button("🔄 Trocar de Conta", use_container_width=True):
-        logout()
-        st.success("✅ Sessão encerrada!")
-        st.info("🔑 Faça login com outra conta...")
-        st.rerun()
 
 # =========================================================
 # CARREGAMENTO DE DADOS
