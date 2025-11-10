@@ -17,9 +17,51 @@ def cashflow_line(df: pd.DataFrame):
     fig.update_layout(xaxis_title=None, yaxis_title="R$"); return fig
 
 def category_treemap(df: pd.DataFrame):
+    """
+    Treemap robusto:
+    - Garante colunas category/subcategory
+    - Converte despesas (amount<0) em valores positivos para o gráfico
+    - Trata NaN / ausência total de categorias
+    - Evita ValueError do plotly quando não há folhas válidas
+    """
     d = df.copy()
-    d["value"] = -d["amount"]
-    d = d[d["value"]>0]
-    if d.empty: return px.scatter(title="Sem dados de despesa")
-    fig = px.treemap(d, path=["category","subcategory"], values="value", title="Distribuição de Despesas")
+
+    # garante colunas
+    if "category" not in d.columns:
+        d["category"] = None
+    if "subcategory" not in d.columns:
+        d["subcategory"] = None
+
+    # apenas despesas (amount negativo) -> valor positivo
+    d["value"] = (-d["amount"]).astype(float)
+    d = d[d["value"] > 0]
+
+    if d.empty:
+        # volta um gráfico “placeholder” informativo
+        fig = px.scatter(title="Sem dados de despesa para o período")
+        return fig
+
+    # preenche NaN com rótulos padrão
+    d["category"] = d["category"].fillna("Sem categoria")
+    d["subcategory"] = d["subcategory"].fillna("Outros")
+
+    # agrega (evita duplicatas e linhas com mesmo path)
+    g = (
+        d.groupby(["category", "subcategory"], dropna=False)["value"]
+        .sum()
+        .reset_index()
+    )
+
+    # se depois da agregação ainda ficar vazio (hipótese rara), devolve placeholder
+    if g.empty or g["value"].le(0).all():
+        fig = px.scatter(title="Sem dados suficientes para o treemap")
+        return fig
+
+    # agora sim o treemap tem hierarquia válida
+    fig = px.treemap(
+        g,
+        path=["category", "subcategory"],
+        values="value",
+        title="Distribuição de Despesas"
+    )
     return fig
