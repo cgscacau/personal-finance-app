@@ -1,6 +1,7 @@
 # pages/3_💳_Contas_e_Lançamentos.py
 import streamlit as st
 import pandas as pd
+from datetime import date as date_type
 from app.auth import require_login, current_user_id
 from app.db import supa
 
@@ -32,20 +33,24 @@ def load_accounts(uid: str):
     Returns:
         Lista de dicionários com dados das contas
     """
-    res = supa().table("accounts")\
-        .select("*")\
-        .eq("user_id", uid)\
-        .order("created_at")\
-        .execute()
-    
-    return res.data or []
+    try:
+        res = supa().table("accounts")\
+            .select("*")\
+            .eq("user_id", uid)\
+            .order("created_at")\
+            .execute()
+        
+        return res.data or []
+    except Exception as e:
+        st.error(f"Erro ao carregar contas: {e}")
+        return []
 
 
 def load_categories(uid: str):
     """
     Carrega o catálogo de categorias e subcategorias do usuário.
     
-    Estrutura esperada no banco:
+    Estrutura no banco:
     - Categoria principal: {name: "Alimentação", parent_name: null}
     - Subcategoria: {name: "Delivery", parent_name: "Alimentação"}
     
@@ -65,47 +70,62 @@ def load_categories(uid: str):
             .execute()
         
         cats = res.data or []
+        
+        # Debug: mostra o que veio do banco
+        if st.session_state.get("debug_mode", False):
+            st.write("**DEBUG - Dados do banco:**", cats)
+        
     except Exception as e:
         st.error(f"Erro ao carregar categorias: {e}")
         cats = []
     
-    # Conjuntos para armazenar categorias principais
-    all_categories = set()
+    # Conjuntos e dicionários para organizar dados
+    all_categories = set()  # Todas as categorias principais
+    sub_by_cat = {}  # Mapeamento categoria -> [subcategorias]
     
-    # Dicionário: categoria principal -> lista de subcategorias
-    sub_by_cat = {}
-    
-    # Processa cada registro do banco
+    # Primeira passagem: identifica todas as categorias principais
     for c in cats:
         name = (c.get("name") or "").strip()
         parent = (c.get("parent_name") or "").strip()
         
-        # Ignora registros sem nome
         if not name:
             continue
         
-        if parent:
-            # Este registro é uma SUBCATEGORIA
-            # parent_name indica a categoria principal
-            # name é o nome da subcategoria
-            all_categories.add(parent)
-            
-            if parent not in sub_by_cat:
-                sub_by_cat[parent] = []
-            
-            sub_by_cat[parent].append(name)
-        else:
-            # Este registro é uma CATEGORIA PRINCIPAL
-            # Adiciona ao conjunto de categorias
+        # Se não tem parent_name, é uma categoria principal
+        if not parent:
             all_categories.add(name)
-            
-            # Inicializa lista vazia se ainda não existir
             if name not in sub_by_cat:
                 sub_by_cat[name] = []
     
+    # Segunda passagem: mapeia subcategorias para suas categorias
+    for c in cats:
+        name = (c.get("name") or "").strip()
+        parent = (c.get("parent_name") or "").strip()
+        
+        if not name:
+            continue
+        
+        # Se tem parent_name, é uma subcategoria
+        if parent:
+            # Garante que a categoria pai existe no dicionário
+            if parent not in sub_by_cat:
+                sub_by_cat[parent] = []
+            
+            # Adiciona a subcategoria à lista da categoria pai
+            if name not in sub_by_cat[parent]:
+                sub_by_cat[parent].append(name)
+            
+            # Adiciona a categoria pai ao conjunto (caso não tenha sido adicionada antes)
+            all_categories.add(parent)
+    
     # Ordena as subcategorias de cada categoria
     for cat in sub_by_cat:
-        sub_by_cat[cat] = sorted(set(sub_by_cat[cat]))
+        sub_by_cat[cat] = sorted(sub_by_cat[cat])
+    
+    # Debug: mostra estrutura processada
+    if st.session_state.get("debug_mode", False):
+        st.write("**DEBUG - Categorias processadas:**", sorted(all_categories))
+        st.write("**DEBUG - Subcategorias por categoria:**", sub_by_cat)
     
     # Retorna categorias ordenadas e o mapeamento de subcategorias
     cat_names = sorted(all_categories)
@@ -124,17 +144,21 @@ def load_transactions(uid: str, account_id: str = None):
     Returns:
         Lista de dicionários com dados dos lançamentos
     """
-    q = supa().table("transactions")\
-        .select("*")\
-        .eq("user_id", uid)
-    
-    # Filtra por conta se especificado
-    if account_id:
-        q = q.eq("account_id", account_id)
-    
-    res = q.order("date", desc=True).execute()
-    
-    return res.data or []
+    try:
+        q = supa().table("transactions")\
+            .select("*")\
+            .eq("user_id", uid)
+        
+        # Filtra por conta se especificado
+        if account_id:
+            q = q.eq("account_id", account_id)
+        
+        res = q.order("date", desc=True).execute()
+        
+        return res.data or []
+    except Exception as e:
+        st.error(f"Erro ao carregar transações: {e}")
+        return []
 
 
 def insert_category(uid: str, category: str, subcategory: str = None, kind: str = "both"):
@@ -151,11 +175,13 @@ def insert_category(uid: str, category: str, subcategory: str = None, kind: str 
         True se sucesso, False se erro
     """
     try:
+        category = category.strip()
+        
         # Verifica se a categoria principal já existe
         cat_check = supa().table("categories")\
             .select("*")\
             .eq("user_id", uid)\
-            .eq("name", category.strip())\
+            .eq("name", category)\
             .is_("parent_name", "null")\
             .execute()
         
@@ -163,27 +189,29 @@ def insert_category(uid: str, category: str, subcategory: str = None, kind: str 
         if not cat_check.data:
             supa().table("categories").insert({
                 "user_id": uid,
-                "name": category.strip(),
+                "name": category,
                 "parent_name": None,
                 "kind": kind
             }).execute()
         
         # Se há subcategoria, cria o registro da subcategoria
         if subcategory and subcategory.strip():
+            subcategory = subcategory.strip()
+            
             # Verifica se a subcategoria já existe
             sub_check = supa().table("categories")\
                 .select("*")\
                 .eq("user_id", uid)\
-                .eq("name", subcategory.strip())\
-                .eq("parent_name", category.strip())\
+                .eq("name", subcategory)\
+                .eq("parent_name", category)\
                 .execute()
             
             # Se não existe, cria
             if not sub_check.data:
                 supa().table("categories").insert({
                     "user_id": uid,
-                    "name": subcategory.strip(),
-                    "parent_name": category.strip(),
+                    "name": subcategory,
+                    "parent_name": category,
                     "kind": kind
                 }).execute()
         
@@ -194,7 +222,7 @@ def insert_category(uid: str, category: str, subcategory: str = None, kind: str 
         return False
 
 
-def insert_transaction(uid: str, account_id: str, date, description: str, 
+def insert_transaction(uid: str, account_id: str, trans_date, description: str, 
                        amount: float, category: str = None, subcategory: str = None, 
                        tags: str = None):
     """
@@ -203,7 +231,7 @@ def insert_transaction(uid: str, account_id: str, date, description: str,
     Args:
         uid: ID do usuário
         account_id: ID da conta
-        date: Data do lançamento
+        trans_date: Data do lançamento
         description: Descrição do lançamento
         amount: Valor (negativo para despesa, positivo para receita)
         category: Categoria (opcional)
@@ -219,15 +247,19 @@ def insert_transaction(uid: str, account_id: str, date, description: str,
         if tags:
             tags_list = [t.strip() for t in tags.split(",") if t.strip()]
         
+        # Processa categoria e subcategoria
+        final_category = category.strip() if category and category.strip() else None
+        final_subcategory = subcategory.strip() if subcategory and subcategory.strip() else None
+        
         # Monta payload
         payload = {
             "user_id": uid,
             "account_id": account_id,
-            "date": str(date),
+            "date": str(trans_date),
             "description": description.strip(),
             "amount": float(amount),
-            "category": category.strip() if category else None,
-            "subcategory": subcategory.strip() if subcategory else None,
+            "category": final_category,
+            "subcategory": final_subcategory,
             "tags": tags_list,
             "source_file": "manual",
         }
@@ -241,6 +273,37 @@ def insert_transaction(uid: str, account_id: str, date, description: str,
         st.error(f"Erro ao inserir lançamento: {e}")
         return False
 
+
+def delete_transaction(transaction_id: str):
+    """
+    Exclui um lançamento do banco de dados.
+    
+    Args:
+        transaction_id: ID do lançamento a ser excluído
+        
+    Returns:
+        True se sucesso, False se erro
+    """
+    try:
+        supa().table("transactions")\
+            .delete()\
+            .eq("id", transaction_id)\
+            .execute()
+        
+        return True
+    
+    except Exception as e:
+        st.error(f"Erro ao excluir lançamento: {e}")
+        return False
+
+
+# =========================================================
+# MODO DEBUG (OPCIONAL)
+# =========================================================
+if st.sidebar.checkbox("🐛 Modo Debug", value=False):
+    st.session_state.debug_mode = True
+else:
+    st.session_state.debug_mode = False
 
 # =========================================================
 # SELEÇÃO DE CONTA
@@ -273,6 +336,15 @@ st.divider()
 # CADASTRO DE CATEGORIAS
 # =========================================================
 st.subheader("📋 Catálogo de Categorias")
+
+# Carrega categorias ANTES do expander para poder mostrar resumo
+cat_names, sub_by_cat = load_categories(uid)
+
+# Mostra resumo das categorias cadastradas
+if cat_names:
+    total_cats = len(cat_names)
+    total_subs = sum(len(subs) for subs in sub_by_cat.values())
+    st.caption(f"📊 Você tem **{total_cats} categorias** e **{total_subs} subcategorias** cadastradas.")
 
 with st.expander("➕ Cadastrar nova categoria/subcategoria"):
     st.caption(
@@ -317,6 +389,18 @@ with st.expander("➕ Cadastrar nova categoria/subcategoria"):
                     st.success("✅ Categoria cadastrada com sucesso!")
                     st.rerun()
 
+# Mostra lista de categorias existentes
+if cat_names:
+    with st.expander("📋 Ver todas as categorias cadastradas"):
+        for cat in cat_names:
+            subs = sub_by_cat.get(cat, [])
+            if subs:
+                st.write(f"**{cat}**")
+                for sub in subs:
+                    st.write(f"  └─ {sub}")
+            else:
+                st.write(f"**{cat}** _(sem subcategorias)_")
+
 st.divider()
 
 # =========================================================
@@ -324,7 +408,7 @@ st.divider()
 # =========================================================
 st.subheader("📝 Novo Lançamento")
 
-# Carrega catálogo de categorias
+# Recarrega categorias para garantir dados atualizados
 cat_names, sub_by_cat = load_categories(uid)
 
 with st.form("form_lancamento", clear_on_submit=True):
@@ -335,7 +419,8 @@ with st.form("form_lancamento", clear_on_submit=True):
     with col1:
         date_input = st.date_input(
             "Data *",
-            help="Data do lançamento"
+            help="Data do lançamento",
+            value=date_type.today()
         )
     
     with col2:
@@ -364,11 +449,15 @@ with st.form("form_lancamento", clear_on_submit=True):
             help="Ative para selecionar categorias do seu catálogo"
         )
         
+        # Inicializa variáveis
+        category_input = None
+        subcategory_input = None
+        
         if use_catalog and cat_names:
             # ========== MODO CATÁLOGO ==========
             
             # Opções de categoria (inclui opção manual)
-            options_cat = cat_names + ["✏️ (digitar manualmente)"]
+            options_cat = [""] + cat_names + ["✏️ (digitar manualmente)"]
             
             category_input = st.selectbox(
                 "Categoria", 
@@ -387,7 +476,7 @@ with st.form("form_lancamento", clear_on_submit=True):
                     placeholder="Ex.: Nova Subcategoria"
                 )
             
-            else:
+            elif category_input:  # Se selecionou uma categoria do catálogo
                 # Busca subcategorias da categoria selecionada
                 subs = sub_by_cat.get(category_input, [])
                 
@@ -407,7 +496,7 @@ with st.form("form_lancamento", clear_on_submit=True):
                 
                 else:
                     # Não tem subcategorias cadastradas
-                    st.info("ℹ️ Esta categoria não possui subcategorias cadastradas.")
+                    st.info(f"ℹ️ A categoria '{category_input}' não possui subcategorias cadastradas.")
                     subcategory_input = None
         
         else:
@@ -432,7 +521,7 @@ with st.form("form_lancamento", clear_on_submit=True):
     )
     
     # -------------------- BOTÃO DE SUBMIT --------------------
-    submitted_transaction = st.form_submit_button("➕ Adicionar lançamento")
+    submitted_transaction = st.form_submit_button("➕ Adicionar lançamento", type="primary")
     
     if submitted_transaction:
         # Validações
@@ -447,7 +536,7 @@ with st.form("form_lancamento", clear_on_submit=True):
             success = insert_transaction(
                 uid=uid,
                 account_id=aid,
-                date=date_input,
+                trans_date=date_input,
                 description=description_input,
                 amount=amount_input,
                 category=category_input,
@@ -482,20 +571,38 @@ else:
         if col not in df.columns:
             df[col] = None
     
+    # Formata a coluna de valor para mostrar tipo de transação
+    df_display = df[view_cols].copy()
+    
     # Exibe tabela
     st.dataframe(
-        df[view_cols], 
+        df_display, 
         use_container_width=True, 
         height=460,
         column_config={
-            "date": st.column_config.DateColumn("Data"),
-            "description": st.column_config.TextColumn("Descrição"),
+            "date": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
+            "description": st.column_config.TextColumn("Descrição", width="large"),
             "amount": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
             "category": st.column_config.TextColumn("Categoria"),
             "subcategory": st.column_config.TextColumn("Subcategoria"),
             "tags": st.column_config.ListColumn("Tags"),
         }
     )
+    
+    # Estatísticas rápidas
+    col_stat1, col_stat2, col_stat3 = st.columns(3)
+    
+    with col_stat1:
+        total_receitas = df[df["amount"] > 0]["amount"].sum()
+        st.metric("💰 Total Receitas", f"R$ {total_receitas:,.2f}")
+    
+    with col_stat2:
+        total_despesas = df[df["amount"] < 0]["amount"].sum()
+        st.metric("💸 Total Despesas", f"R$ {total_despesas:,.2f}")
+    
+    with col_stat3:
+        saldo = df["amount"].sum()
+        st.metric("📊 Saldo", f"R$ {saldo:,.2f}")
     
     # -------------------- EXCLUSÃO DE LANÇAMENTO --------------------
     with st.expander("🗑️ Excluir lançamento"):
@@ -507,9 +614,8 @@ else:
         # Cria label legível para cada lançamento
         df_small["label"] = df_small.apply(
             lambda r: (
-                f'{str(r["id"])[:8]}... | '
-                f'{r["date"]} | '
-                f'{str(r["description"])[:40]} | '
+                f'{str(r["date"])} | '
+                f'{str(r["description"])[:50]} | '
                 f'R$ {float(r["amount"]):.2f}'
             ),
             axis=1
@@ -524,18 +630,12 @@ else:
         
         # Botão de exclusão
         if st.button("🗑️ Confirmar exclusão", type="primary"):
-            try:
-                # Encontra o registro correspondente
-                row = df_small[df_small["label"] == to_delete_label].iloc[0]
-                
-                # Exclui do banco
-                supa().table("transactions")\
-                    .delete()\
-                    .eq("id", row["id"])\
-                    .execute()
-                
+            # Encontra o registro correspondente
+            row = df_small[df_small["label"] == to_delete_label].iloc[0]
+            
+            # Exclui do banco
+            success = delete_transaction(row["id"])
+            
+            if success:
                 st.success("✅ Lançamento excluído com sucesso!")
                 st.rerun()
-            
-            except Exception as e:
-                st.error(f"❌ Erro ao excluir lançamento: {e}")
