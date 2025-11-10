@@ -85,8 +85,61 @@ with st.expander("➕ Cadastrar categorias/subcategorias"):
             except Exception as e:
                 st.error(f"Erro ao cadastrar categoria: {e}")
 
-# carregar catálogo para o formulário
+# carregar catálogo
 cat_names, sub_by_cat = load_categories(uid)
+
+# Estado para resetar subcategoria ao trocar categoria
+if "cat_selected" not in st.session_state:
+    st.session_state.cat_selected = None
+if "sub_selected" not in st.session_state:
+    st.session_state.sub_selected = None
+
+def on_change_category():
+    # zera a subcategoria quando a categoria muda
+    st.session_state.sub_selected = None
+
+use_catalog = st.toggle("Usar catálogo de categorias", value=bool(cat_names))
+
+if use_catalog and cat_names:
+    category = st.selectbox(
+        "Categoria",
+        cat_names + ["(digitar manualmente)"],
+        index=(cat_names + ["(digitar manualmente)"]).index(st.session_state.cat_selected)
+        if st.session_state.cat_selected in (cat_names + ["(digitar manualmente)"]) else 0,
+        key="category_select",
+        on_change=on_change_category,
+    )
+    st.session_state.cat_selected = category
+
+    if category == "(digitar manualmente)":
+        category = st.text_input("Categoria (manual)")
+        subcategory = st.text_input("Subcategoria (manual)")
+    else:
+        # filtra subcategorias da categoria escolhida
+        subs = sorted({s for s in sub_by_cat.get(category, []) if s and s != "—"})
+        if not subs:
+            subs = ["—"]  # placeholder
+
+        # define índice da subcategoria respeitando o reset
+        default_idx = 0
+        if st.session_state.sub_selected in subs:
+            default_idx = subs.index(st.session_state.sub_selected)
+
+        subcategory = st.selectbox(
+            "Subcategoria",
+            subs,
+            index=default_idx,
+            key="subcategory_select",
+        )
+        st.session_state.sub_selected = subcategory
+
+        # converte placeholder em None para salvar no banco
+        if subcategory == "—":
+            subcategory = None
+else:
+    category = st.text_input("Categoria (manual)")
+    subcategory = st.text_input("Subcategoria (manual)")
+
 
 # =========================================================
 # Formulário de lançamento manual
