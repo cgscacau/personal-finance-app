@@ -1,5 +1,5 @@
 import streamlit as st
-from app.auth import require_login, current_user_id, logout
+from app.auth import require_login, current_user_id, sign_out
 
 st.set_page_config(page_title="Gestor Financeiro", page_icon="💸", layout="wide")
 
@@ -45,7 +45,8 @@ if "session" in st.session_state and st.session_state.session:
     st.sidebar.write(f"**Email:** {user_email}")
     
     # Mostra ID do usuário (primeiros 8 caracteres)
-    st.sidebar.caption(f"ID: {uid[:8]}...")
+    if uid:
+        st.sidebar.caption(f"ID: {uid[:8]}...")
 else:
     st.sidebar.error("🚫 Sessão não detectada")
 
@@ -71,17 +72,17 @@ st.sidebar.markdown("### 🚪 Sair do Sistema")
 col1, col2 = st.sidebar.columns(2)
 
 with col1:
-    if st.button("🔓 Logout", type="primary", use_container_width=True):
-        # Executa logout
-        logout()
+    if st.button("🔓 Logout", type="primary", use_container_width=True, key="logout_btn"):
+        # Executa logout usando sign_out
+        sign_out()
         st.success("✅ Logout realizado!")
         st.info("👋 Até logo! Redirecionando...")
         st.rerun()
 
 with col2:
-    if st.button("🔄 Trocar Conta", use_container_width=True):
+    if st.button("🔄 Trocar Conta", use_container_width=True, key="switch_account_btn"):
         # Limpa sessão para trocar de conta
-        logout()
+        sign_out()
         st.success("✅ Sessão encerrada!")
         st.info("🔑 Faça login com outra conta...")
         st.rerun()
