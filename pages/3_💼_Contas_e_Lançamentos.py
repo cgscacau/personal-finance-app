@@ -1,14 +1,16 @@
+# pages/3_💳_Contas_e_Lançamentos.py
 import streamlit as st
 import pandas as pd
 from app.auth import require_login, current_user_id
 from app.db import supa
 
+st.set_page_config(page_title="Contas & Lançamentos", page_icon="💳", layout="wide")
 st.title("💳 Contas & Lançamentos")
 require_login()
 uid = current_user_id()
 
 # =========================================================
-# Utilitários
+# Utils de acesso
 # =========================================================
 def load_accounts(uid: str):
     res = supa().table("accounts").select("*").eq("user_id", uid).order("created_at").execute()
@@ -16,25 +18,29 @@ def load_accounts(uid: str):
 
 def load_categories(uid: str):
     """
-    Tenta carregar a tabela 'categories'. Se não existir ou estiver vazia,
-    retorna estruturas vazias para o fallback manual.
-    Espera colunas: name (categoria), parent_name (subcategoria opcional), kind
+    Lê categorias do usuário e retorna:
+      - cat_names: lista de nomes de categoria
+      - sub_by_cat: dict {categoria: [sub1, sub2, ...]}
     """
     try:
-        res = supa().table("categories").select("*").eq("user_id", uid).order("name").execute()
+        res = supa().table("categories").select("name,parent_name,kind").eq("user_id", uid).order("name").execute()
         cats = res.data or []
     except Exception:
         cats = []
 
-    cat_names = sorted({c.get("name") for c in cats if c.get("name")})
-    sub_by_cat = {}
+    cat_names = sorted({(c.get("name") or "").strip() for c in cats if c.get("name")})
+    sub_by_cat: dict[str, list[str]] = {}
     for c in cats:
-        name = c.get("name")
-        sub = c.get("parent_name") or "—"
-        if name:
-            sub_by_cat.setdefault(name, set()).add(sub)
-    # Ordena as subcategorias
-    sub_by_cat = {k: sorted(list(v)) for k, v in sub_by_cat.items()}
+        name = (c.get("name") or "").strip()
+        if not name:
+            continue
+        sub = (c.get("parent_name") or "").strip()
+        sub_by_cat.setdefault(name, [])
+        if sub:
+            sub_by_cat[name].append(sub)
+    # remove duplicatas e ordena
+    for k in list(sub_by_cat.keys()):
+        sub_by_cat[k] = sorted(set(sub_by_cat[k]))
     return cat_names, sub_by_cat
 
 def load_transactions(uid: str, account_id: str | None = None):
@@ -44,8 +50,9 @@ def load_transactions(uid: str, account_id: str | None = None):
     res = q.order("date", desc=True).execute()
     return res.data or []
 
+
 # =========================================================
-# Selecionar conta
+# Seleção de Conta
 # =========================================================
 accounts = load_accounts(uid)
 if not accounts:
@@ -57,7 +64,7 @@ account_name = st.selectbox("Conta", list(name_to_id.keys()))
 aid = name_to_id.get(account_name)
 
 # =========================================================
-# Cadastro rápido de categorias/subcategorias
+# Catálogo de categorias (com criação rápida)
 # =========================================================
 with st.expander("➕ Cadastrar categorias/subcategorias"):
     st.caption("Mantenha um catálogo próprio para facilitar o lançamento e relatórios.")
@@ -85,64 +92,23 @@ with st.expander("➕ Cadastrar categorias/subcategorias"):
             except Exception as e:
                 st.error(f"Erro ao cadastrar categoria: {e}")
 
-# carregar catálogo
+# Carrega catálogo para o formulário
 cat_names, sub_by_cat = load_categories(uid)
 
+# =========================================================
 # Estado para resetar subcategoria ao trocar categoria
+# =========================================================
 if "cat_selected" not in st.session_state:
     st.session_state.cat_selected = None
 if "sub_selected" not in st.session_state:
     st.session_state.sub_selected = None
 
 def on_change_category():
-    # zera a subcategoria quando a categoria muda
     st.session_state.sub_selected = None
-
-use_catalog = st.toggle("Usar catálogo de categorias", value=bool(cat_names))
-
-if use_catalog and cat_names:
-    category = st.selectbox(
-        "Categoria",
-        cat_names + ["(digitar manualmente)"],
-        index=(cat_names + ["(digitar manualmente)"]).index(st.session_state.cat_selected)
-        if st.session_state.cat_selected in (cat_names + ["(digitar manualmente)"]) else 0,
-        key="category_select",
-        on_change=on_change_category,
-    )
-    st.session_state.cat_selected = category
-
-    if category == "(digitar manualmente)":
-        category = st.text_input("Categoria (manual)")
-        subcategory = st.text_input("Subcategoria (manual)")
-    else:
-        # filtra subcategorias da categoria escolhida
-        subs = sorted({s for s in sub_by_cat.get(category, []) if s and s != "—"})
-        if not subs:
-            subs = ["—"]  # placeholder
-
-        # define índice da subcategoria respeitando o reset
-        default_idx = 0
-        if st.session_state.sub_selected in subs:
-            default_idx = subs.index(st.session_state.sub_selected)
-
-        subcategory = st.selectbox(
-            "Subcategoria",
-            subs,
-            index=default_idx,
-            key="subcategory_select",
-        )
-        st.session_state.sub_selected = subcategory
-
-        # converte placeholder em None para salvar no banco
-        if subcategory == "—":
-            subcategory = None
-else:
-    category = st.text_input("Categoria (manual)")
-    subcategory = st.text_input("Subcategoria (manual)")
 
 
 # =========================================================
-# Formulário de lançamento manual
+# Formulário de novo lançamento
 # =========================================================
 st.subheader("📝 Novo lançamento")
 
@@ -157,18 +123,34 @@ with st.form("novo_lancamento", clear_on_submit=True):
     with c3:
         amount = st.number_input("Valor (negativo = despesa, positivo = receita)", step=0.01, format="%.2f")
     with c4:
-        # Categoria preferencialmente via catálogo
         use_catalog = st.toggle("Usar catálogo de categorias", value=bool(cat_names))
 
         if use_catalog and cat_names:
-            category = st.selectbox("Categoria", cat_names + ["(digitar manualmente)"])
+            # Categoria
+            options_cat = cat_names + ["(digitar manualmente)"]
+            idx_cat = options_cat.index(st.session_state.cat_selected) if st.session_state.cat_selected in options_cat else 0
+            category = st.selectbox(
+                "Categoria", options_cat, index=idx_cat,
+                key="category_select", on_change=on_change_category
+            )
+            st.session_state.cat_selected = category
+
+            # Subcategoria
             if category == "(digitar manualmente)":
                 category = st.text_input("Categoria (manual)")
                 subcategory = st.text_input("Subcategoria (manual)")
             else:
-                subs = sub_by_cat.get(category, ["—"])
-                sub = st.selectbox("Subcategoria", subs)
-                subcategory = None if sub == "—" else sub
+                subs = sorted({s for s in sub_by_cat.get(category, []) if s})
+                if not subs:
+                    subs = ["—"]
+                # índice consistente
+                idx_sub = subs.index(st.session_state.sub_selected) if st.session_state.sub_selected in subs else 0
+                subcategory = st.selectbox(
+                    "Subcategoria", subs, index=idx_sub, key="subcategory_select"
+                )
+                st.session_state.sub_selected = subcategory
+                if subcategory == "—":
+                    subcategory = None
         else:
             category = st.text_input("Categoria (manual)")
             subcategory = st.text_input("Subcategoria (manual)")
@@ -213,31 +195,21 @@ else:
     for col in view_cols:
         if col not in df.columns:
             df[col] = None
-    st.dataframe(df[view_cols], use_container_width=True, height=480)
+    st.dataframe(df[view_cols], use_container_width=True, height=460)
 
-    # =====================================================
-    # Exclusão de lançamento
-    # =====================================================
+    # Exclusão
     with st.expander("🗑 Excluir lançamento"):
-        # mostra IDs e descrições recentes para facilitar
         df_small = df[["id", "date", "description", "amount"]].copy()
         df_small["label"] = df_small.apply(
-            lambda r: f'{r["id"][:8]}... | {r["date"]} | {r["description"][:30]} | R$ {r["amount"]:.2f}', axis=1
+            lambda r: f'{str(r["id"])[:8]}... | {r["date"]} | {str(r["description"])[:30]} | R$ {float(r["amount"]):.2f}',
+            axis=1
         )
         to_delete_label = st.selectbox("Selecione o lançamento", df_small["label"])
         if st.button("Excluir lançamento"):
             try:
-                # pega o id pela label escolhida
                 row = df_small[df_small["label"] == to_delete_label].iloc[0]
                 supa().table("transactions").delete().eq("id", row["id"]).execute()
                 st.success("Lançamento excluído.")
                 st.rerun()
             except Exception as e:
                 st.error(f"Erro ao excluir: {e}")
-
-# =========================================================
-# (Opcional) Depuração da sessão/token
-# =========================================================
-# with st.expander("🔧 DEBUG (ocultar em produção)"):
-#     st.write("User ID:", uid)
-#     st.write("Sessão:", st.session_state.get("session"))
