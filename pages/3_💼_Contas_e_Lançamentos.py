@@ -10,24 +10,19 @@ require_login()
 uid = current_user_id()
 
 # =========================================================
-# Utils de acesso
+# Utils
 # =========================================================
 def load_accounts(uid: str):
     res = supa().table("accounts").select("*").eq("user_id", uid).order("created_at").execute()
     return res.data or []
 
 def load_categories(uid: str):
-    """
-    Lê categorias do usuário e retorna:
-      - cat_names: lista de nomes de categoria
-      - sub_by_cat: dict {categoria: [sub1, sub2, ...]}
-    """
+    """Retorna (cat_names, sub_by_cat={cat:[subs...]}) para o usuário."""
     try:
         res = supa().table("categories").select("name,parent_name,kind").eq("user_id", uid).order("name").execute()
         cats = res.data or []
     except Exception:
         cats = []
-
     cat_names = sorted({(c.get("name") or "").strip() for c in cats if c.get("name")})
     sub_by_cat: dict[str, list[str]] = {}
     for c in cats:
@@ -38,7 +33,6 @@ def load_categories(uid: str):
         sub_by_cat.setdefault(name, [])
         if sub:
             sub_by_cat[name].append(sub)
-    # remove duplicatas e ordena
     for k in list(sub_by_cat.keys()):
         sub_by_cat[k] = sorted(set(sub_by_cat[k]))
     return cat_names, sub_by_cat
@@ -49,7 +43,6 @@ def load_transactions(uid: str, account_id: str | None = None):
         q = q.eq("account_id", account_id)
     res = q.order("date", desc=True).execute()
     return res.data or []
-
 
 # =========================================================
 # Seleção de Conta
@@ -64,7 +57,7 @@ account_name = st.selectbox("Conta", list(name_to_id.keys()))
 aid = name_to_id.get(account_name)
 
 # =========================================================
-# Catálogo de categorias (com criação rápida)
+# Catálogo de categorias (cadastro rápido)
 # =========================================================
 with st.expander("➕ Cadastrar categorias/subcategorias"):
     st.caption("Mantenha um catálogo próprio para facilitar o lançamento e relatórios.")
@@ -75,7 +68,6 @@ with st.expander("➕ Cadastrar categorias/subcategorias"):
         new_sub = st.text_input("Subcategoria (opcional)", placeholder="Ex.: Delivery")
     with colc3:
         kind = st.selectbox("Tipo", ["both", "expense", "income"])
-
     if st.button("Adicionar categoria"):
         if not new_cat:
             st.warning("Informe ao menos a categoria.")
@@ -92,18 +84,18 @@ with st.expander("➕ Cadastrar categorias/subcategorias"):
             except Exception as e:
                 st.error(f"Erro ao cadastrar categoria: {e}")
 
-# Carrega catálogo para o formulário
+# Carrega catálogo
 cat_names, sub_by_cat = load_categories(uid)
 
-# =========================================================
-# Estado para resetar subcategoria ao trocar categoria
-# =========================================================
-# --- estado para lembrar seleção anterior (sem callbacks dentro do form)
+# Estado global para seleção (sem callbacks em form)
 if "cat_selected" not in st.session_state:
     st.session_state.cat_selected = None
 if "sub_selected" not in st.session_state:
     st.session_state.sub_selected = None
 
+# =========================================================
+# Formulário de novo lançamento
+# =========================================================
 st.subheader("📝 Novo lançamento")
 
 with st.form("novo_lancamento", clear_on_submit=True):
@@ -120,28 +112,36 @@ with st.form("novo_lancamento", clear_on_submit=True):
         use_catalog = st.toggle("Usar catálogo de categorias", value=bool(cat_names))
 
         if use_catalog and cat_names:
-            # Categoria (sem on_change)
+            # Categoria (sem on_change; controlamos via session_state)
             options_cat = cat_names + ["(digitar manualmente)"]
-            # índice default com base no estado salvo
             idx_cat = options_cat.index(st.session_state.cat_selected) if st.session_state.cat_selected in options_cat else 0
             category = st.selectbox("Categoria", options_cat, index=idx_cat, key="category_select")
 
-            # se a categoria mudou desde a última renderização, resetar subcategoria
+            # Detecta mudança de categoria e reseta subcategoria
             if category != st.session_state.cat_selected:
-                st.session_state.sub_selected = None
                 st.session_state.cat_selected = category
+                st.session_state.sub_selected = None
+                # também zera key dinâmica anterior se existir
+                for k in list(st.session_state.keys()):
+                    if k.startswith("subcategory_select__"):
+                        st.session_state.pop(k)
 
-            # Subcategoria
             if category == "(digitar manualmente)":
                 category = st.text_input("Categoria (manual)")
                 subcategory = st.text_input("Subcategoria (manual)")
             else:
+                # Subcategorias válidas dessa categoria
                 subs = sorted({s for s in sub_by_cat.get(category, []) if s})
                 if not subs:
                     subs = ["—"]
-                idx_sub = subs.index(st.session_state.sub_selected) if st.session_state.sub_selected in subs else 0
-                subcategory = st.selectbox("Subcategoria", subs, index=idx_sub, key="subcategory_select")
-                # salvar estado e converter placeholder em None
+
+                # 🔑 key dinâmica dependente da categoria para recriar o widget
+                sub_key = f"subcategory_select__{category}"
+
+                # índice padrão coerente com estado salvo
+                default_idx = subs.index(st.session_state.sub_selected) if st.session_state.sub_selected in subs else 0
+
+                subcategory = st.selectbox("Subcategoria", subs, index=default_idx, key=sub_key)
                 st.session_state.sub_selected = subcategory
                 if subcategory == "—":
                     subcategory = None
@@ -151,7 +151,6 @@ with st.form("novo_lancamento", clear_on_submit=True):
 
     tags = st.text_input("Tags (opcional, separadas por vírgula)", placeholder="ex.: nubank, ifood")
 
-    # ✅ botão obrigatório dentro do form
     submitted = st.form_submit_button("Adicionar")
     if submitted:
         if not description or amount is None:
@@ -174,7 +173,6 @@ with st.form("novo_lancamento", clear_on_submit=True):
                 st.rerun()
             except Exception as e:
                 st.error(f"Erro ao inserir lançamento: {e}")
-
 
 # =========================================================
 # Listagem de lançamentos
