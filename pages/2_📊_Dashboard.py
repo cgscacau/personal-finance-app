@@ -1,4 +1,4 @@
-# pages/1_📊_Dashboard.py
+# pages/2_📊_Dashboard.py
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -132,31 +132,31 @@ def calculate_metrics(df: pd.DataFrame):
     """
     if df.empty:
         return {
-            "receitas": 0,
-            "despesas": 0,
-            "saldo": 0,
+            "receitas": 0.0,
+            "despesas": 0.0,
+            "saldo": 0.0,
             "num_lancamentos": 0,
-            "ticket_medio_receita": 0,
-            "ticket_medio_despesa": 0,
-            "maior_receita": 0,
-            "maior_despesa": 0
+            "ticket_medio_receita": 0.0,
+            "ticket_medio_despesa": 0.0,
+            "maior_receita": 0.0,
+            "maior_despesa": 0.0
         }
     
-    receitas = df[df["amount"] > 0]["amount"].sum()
-    despesas = abs(df[df["amount"] < 0]["amount"].sum())
-    saldo = df["amount"].sum()
+    receitas = float(df[df["amount"] > 0]["amount"].sum())
+    despesas = float(abs(df[df["amount"] < 0]["amount"].sum()))
+    saldo = float(df["amount"].sum())
     num_lancamentos = len(df)
     
     # Tickets médios
     receitas_list = df[df["amount"] > 0]["amount"]
     despesas_list = df[df["amount"] < 0]["amount"].abs()
     
-    ticket_medio_receita = receitas_list.mean() if len(receitas_list) > 0 else 0
-    ticket_medio_despesa = despesas_list.mean() if len(despesas_list) > 0 else 0
+    ticket_medio_receita = float(receitas_list.mean()) if len(receitas_list) > 0 else 0.0
+    ticket_medio_despesa = float(despesas_list.mean()) if len(despesas_list) > 0 else 0.0
     
     # Maiores valores
-    maior_receita = receitas_list.max() if len(receitas_list) > 0 else 0
-    maior_despesa = despesas_list.max() if len(despesas_list) > 0 else 0
+    maior_receita = float(receitas_list.max()) if len(receitas_list) > 0 else 0.0
+    maior_despesa = float(despesas_list.max()) if len(despesas_list) > 0 else 0.0
     
     return {
         "receitas": receitas,
@@ -172,8 +172,15 @@ def calculate_metrics(df: pd.DataFrame):
 
 def create_gauge_chart(value: float, max_value: float, title: str, color: str):
     """Cria um gráfico de gauge (medidor)."""
+    # Garante valores válidos
+    value = max(0, float(value))
+    max_value = max(value, float(max_value))
+    
+    if max_value == 0:
+        max_value = 1
+    
     fig = go.Figure(go.Indicator(
-        mode="gauge+number+delta",
+        mode="gauge+number",
         value=value,
         domain={'x': [0, 1], 'y': [0, 1]},
         title={'text': title, 'font': {'size': 16}},
@@ -307,7 +314,7 @@ def create_daily_balance_chart(df: pd.DataFrame):
         mode='lines',
         name='Saldo Acumulado',
         line=dict(color='#3498db', width=2),
-        fill='tonexty',
+        fill='tozeroy',
         fillcolor='rgba(52, 152, 219, 0.2)'
     ))
     
@@ -387,6 +394,9 @@ if df.empty:
 df["date"] = pd.to_datetime(df["date"])
 df["amount"] = pd.to_numeric(df["amount"], errors='coerce')
 
+# Remove linhas com valores inválidos
+df = df.dropna(subset=["amount"])
+
 # Filtra por conta se necessário
 if selected_account != "Todas as contas":
     account_id = next((acc["id"] for acc in accounts if acc["name"] == selected_account), None)
@@ -428,10 +438,11 @@ with col2:
 
 with col3:
     saldo_color = "normal" if metrics['saldo'] >= 0 else "inverse"
+    percentual_saldo = (metrics['saldo']/metrics['receitas']*100) if metrics['receitas'] > 0 else 0
     st.metric(
         label="📊 Saldo",
         value=f"R$ {metrics['saldo']:,.2f}",
-        delta=f"{(metrics['saldo']/metrics['receitas']*100) if metrics['receitas'] > 0 else 0:.1f}% das receitas",
+        delta=f"{percentual_saldo:.1f}% das receitas",
         delta_color=saldo_color
     )
 
@@ -493,46 +504,66 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 with tab1:
     # Gráfico de fluxo de caixa
-    st.plotly_chart(
-        cashflow_line(df_filtered),
-        use_container_width=True,
-        key="cashflow_main"
-    )
+    try:
+        st.plotly_chart(
+            cashflow_line(df_filtered),
+            use_container_width=True,
+            key="cashflow_main"
+        )
+    except Exception as e:
+        st.error(f"Erro ao gerar gráfico de fluxo de caixa: {e}")
     
     # Comparação mensal
-    comparison_chart = create_comparison_chart(df_filtered)
-    if comparison_chart:
-        st.plotly_chart(
-            comparison_chart,
-            use_container_width=True,
-            key="comparison_main"
-        )
+    try:
+        comparison_chart = create_comparison_chart(df_filtered)
+        if comparison_chart:
+            st.plotly_chart(
+                comparison_chart,
+                use_container_width=True,
+                key="comparison_main"
+            )
+    except Exception as e:
+        st.error(f"Erro ao gerar gráfico de comparação: {e}")
 
 with tab2:
     # Saldo acumulado
-    balance_chart = create_daily_balance_chart(df_filtered)
-    if balance_chart:
-        st.plotly_chart(
-            balance_chart,
-            use_container_width=True,
-            key="balance_main"
-        )
+    try:
+        balance_chart = create_daily_balance_chart(df_filtered)
+        if balance_chart:
+            st.plotly_chart(
+                balance_chart,
+                use_container_width=True,
+                key="balance_main"
+            )
+    except Exception as e:
+        st.error(f"Erro ao gerar gráfico de saldo: {e}")
     
-    # Gauges de controle
+    # Gauges de controle e taxa de economia
     if show_advanced and metrics['receitas'] > 0:
         col1, col2 = st.columns(2)
         
         with col1:
-            gauge_despesas = create_gauge_chart(
-                metrics['despesas'],
-                metrics['receitas'],
-                "Despesas vs Receitas",
-                "#e74c3c"
-            )
-            st.plotly_chart(gauge_despesas, use_container_width=True)
+            try:
+                gauge_despesas = create_gauge_chart(
+                    metrics['despesas'],
+                    metrics['receitas'],
+                    "Despesas vs Receitas",
+                    "#e74c3c"
+                )
+                st.plotly_chart(gauge_despesas, use_container_width=True)
+            except Exception as e:
+                st.error(f"Erro ao gerar gauge: {e}")
         
         with col2:
-            taxa_economia = ((metrics['receitas'] - metrics['despesas']) / metrics['receitas'] * 100) if metrics['receitas'] > 0 else 0
+            # Calcula taxa de economia
+            if metrics['receitas'] > 0:
+                taxa_economia = ((metrics['receitas'] - metrics['despesas']) / metrics['receitas'] * 100)
+            else:
+                taxa_economia = 0
+            
+            # Garante que a taxa está entre -100 e 100
+            taxa_economia = max(-100, min(100, taxa_economia))
+            
             st.metric(
                 "💎 Taxa de Economia",
                 f"{taxa_economia:.1f}%",
@@ -540,41 +571,65 @@ with tab2:
                 delta_color="normal" if taxa_economia >= 20 else "inverse"
             )
             
-            # Barra de progresso
-            st.progress(min(taxa_economia / 100, 1.0))
+            # Barra de progresso (sempre entre 0 e 1)
+            # Se taxa for negativa, mostra 0; se for maior que 100, mostra 1
+            progress_value = max(0.0, min(1.0, taxa_economia / 100))
+            st.progress(progress_value)
+            
+            # Mensagem contextual
+            if taxa_economia < 0:
+                st.caption("⚠️ Suas despesas estão maiores que suas receitas!")
+            elif taxa_economia < 10:
+                st.caption("📉 Taxa de economia baixa. Tente economizar mais!")
+            elif taxa_economia < 20:
+                st.caption("📊 Taxa de economia razoável. Continue assim!")
+            else:
+                st.caption("✅ Excelente taxa de economia! Parabéns!")
 
 with tab3:
     col1, col2 = st.columns(2)
     
     with col1:
         # Top categorias de despesas
-        top_despesas = create_top_categories_chart(df_filtered, "despesas")
-        if top_despesas:
-            st.plotly_chart(top_despesas, use_container_width=True)
-        else:
-            st.info("Nenhuma despesa categorizada encontrada.")
+        try:
+            top_despesas = create_top_categories_chart(df_filtered, "despesas")
+            if top_despesas:
+                st.plotly_chart(top_despesas, use_container_width=True)
+            else:
+                st.info("Nenhuma despesa categorizada encontrada.")
+        except Exception as e:
+            st.error(f"Erro ao gerar gráfico de despesas: {e}")
     
     with col2:
         # Top categorias de receitas
-        top_receitas = create_top_categories_chart(df_filtered, "receitas")
-        if top_receitas:
-            st.plotly_chart(top_receitas, use_container_width=True)
-        else:
-            st.info("Nenhuma receita categorizada encontrada.")
+        try:
+            top_receitas = create_top_categories_chart(df_filtered, "receitas")
+            if top_receitas:
+                st.plotly_chart(top_receitas, use_container_width=True)
+            else:
+                st.info("Nenhuma receita categorizada encontrada.")
+        except Exception as e:
+            st.error(f"Erro ao gerar gráfico de receitas: {e}")
     
     # Treemap de categorias
-    st.plotly_chart(
-        category_treemap(df_filtered),
-        use_container_width=True,
-        key="treemap_main"
-    )
+    try:
+        st.plotly_chart(
+            category_treemap(df_filtered),
+            use_container_width=True,
+            key="treemap_main"
+        )
+    except Exception as e:
+        st.error(f"Erro ao gerar treemap: {e}")
     
     # Gráfico de barras por categoria
-    st.plotly_chart(
-        by_category_bar(df_filtered),
-        use_container_width=True,
-        key="category_bar_main"
-    )
+    try:
+        st.plotly_chart(
+            by_category_bar(df_filtered),
+            use_container_width=True,
+            key="category_bar_main"
+        )
+    except Exception as e:
+        st.error(f"Erro ao gerar gráfico de barras: {e}")
 
 with tab4:
     st.subheader("📋 Tabela de Lançamentos")
@@ -631,10 +686,6 @@ with tab4:
     display_cols = ["date", "description", "amount", "category", "subcategory", "tags"]
     df_display = df_table[[col for col in display_cols if col in df_table.columns]].copy()
     
-    # Formata valores
-    if "amount" in df_display.columns:
-        df_display["amount"] = df_display["amount"].apply(lambda x: f"R$ {x:,.2f}")
-    
     # Exibe tabela
     st.dataframe(
         df_display,
@@ -643,7 +694,7 @@ with tab4:
         column_config={
             "date": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
             "description": st.column_config.TextColumn("Descrição", width="large"),
-            "amount": st.column_config.TextColumn("Valor"),
+            "amount": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
             "category": st.column_config.TextColumn("Categoria"),
             "subcategory": st.column_config.TextColumn("Subcategoria"),
             "tags": st.column_config.ListColumn("Tags")
@@ -651,13 +702,16 @@ with tab4:
     )
     
     # Botão de download
-    csv = df_table.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Baixar dados (CSV)",
-        data=csv,
-        file_name=f"transacoes_{period.lower().replace(' ', '_')}.csv",
-        mime="text/csv"
-    )
+    try:
+        csv = df_table.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Baixar dados (CSV)",
+            data=csv,
+            file_name=f"transacoes_{period.lower().replace(' ', '_')}.csv",
+            mime="text/csv"
+        )
+    except Exception as e:
+        st.error(f"Erro ao gerar CSV: {e}")
 
 # =========================================================
 # RODAPÉ COM INFORMAÇÕES
