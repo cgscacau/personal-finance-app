@@ -7,65 +7,184 @@ st.title("💳 Contas & Lançamentos")
 require_login()
 uid = current_user_id()
 
-# --- Selecionar conta do usuário ---
-res_accounts = supa().table("accounts").select("*").eq("user_id", uid).execute()
-accounts = res_accounts.data or []
-account_names = {a["name"]: a["id"] for a in accounts}
-account_name = st.selectbox("Conta", list(account_names.keys()) or ["Nenhuma conta encontrada"])
-aid = account_names.get(account_name)
+# =========================================================
+# Utilitários
+# =========================================================
+def load_accounts(uid: str):
+    res = supa().table("accounts").select("*").eq("user_id", uid).order("created_at").execute()
+    return res.data or []
 
-# --- Formulário de lançamento manual ---
-st.subheader("➕ Novo Lançamento")
+def load_categories(uid: str):
+    """
+    Tenta carregar a tabela 'categories'. Se não existir ou estiver vazia,
+    retorna estruturas vazias para o fallback manual.
+    Espera colunas: name (categoria), parent_name (subcategoria opcional), kind
+    """
+    try:
+        res = supa().table("categories").select("*").eq("user_id", uid).order("name").execute()
+        cats = res.data or []
+    except Exception:
+        cats = []
 
-with st.form("novo_lancamento"):
-    date = st.date_input("Data")
-    description = st.text_input("Descrição", placeholder="Ex: Almoço, Uber, Pagamento de conta...")
-    amount = st.number_input("Valor (use negativo para despesa, positivo para receita)", step=0.01, format="%.2f")
-    category = st.text_input("Categoria (opcional)")
-    subcategory = st.text_input("Subcategoria (opcional)")
-    tags = st.text_input("Tags (opcional, separadas por vírgula)")
-    submit = st.form_submit_button("Adicionar")
+    cat_names = sorted({c.get("name") for c in cats if c.get("name")})
+    sub_by_cat = {}
+    for c in cats:
+        name = c.get("name")
+        sub = c.get("parent_name") or "—"
+        if name:
+            sub_by_cat.setdefault(name, set()).add(sub)
+    # Ordena as subcategorias
+    sub_by_cat = {k: sorted(list(v)) for k, v in sub_by_cat.items()}
+    return cat_names, sub_by_cat
 
-    if submit:
-        if not description or not amount:
-            st.warning("Preencha ao menos a descrição e o valor.")
+def load_transactions(uid: str, account_id: str | None = None):
+    q = supa().table("transactions").select("*").eq("user_id", uid)
+    if account_id:
+        q = q.eq("account_id", account_id)
+    res = q.order("date", desc=True).execute()
+    return res.data or []
+
+# =========================================================
+# Selecionar conta
+# =========================================================
+accounts = load_accounts(uid)
+if not accounts:
+    st.warning("Você ainda não tem contas. Crie uma em **Importar & Higienizar → ➕ Criar nova conta**.")
+    st.stop()
+
+name_to_id = {a["name"]: a["id"] for a in accounts}
+account_name = st.selectbox("Conta", list(name_to_id.keys()))
+aid = name_to_id.get(account_name)
+
+# =========================================================
+# Cadastro rápido de categorias/subcategorias
+# =========================================================
+with st.expander("➕ Cadastrar categorias/subcategorias"):
+    st.caption("Mantenha um catálogo próprio para facilitar o lançamento e relatórios.")
+    colc1, colc2, colc3 = st.columns([2,2,1])
+    with colc1:
+        new_cat = st.text_input("Categoria", placeholder="Ex.: Alimentação")
+    with colc2:
+        new_sub = st.text_input("Subcategoria (opcional)", placeholder="Ex.: Delivery")
+    with colc3:
+        kind = st.selectbox("Tipo", ["both", "expense", "income"])
+
+    if st.button("Adicionar categoria"):
+        if not new_cat:
+            st.warning("Informe ao menos a categoria.")
         else:
-            data = {
-                "user_id": uid,
-                "account_id": aid,
-                "date": str(date),
-                "description": description.strip(),
-                "amount": float(amount),
-                "category": category or None,
-                "subcategory": subcategory or None,
-                "tags": tags or None,
-                "source_file": "manual",
-            }
-            supa().table("transactions").insert(data).execute()
-            st.success("Lançamento adicionado com sucesso!")
-            st.rerun()
+            try:
+                supa().table("categories").insert({
+                    "user_id": uid,
+                    "name": new_cat.strip(),
+                    "parent_name": (new_sub.strip() or None),
+                    "kind": kind
+                }).execute()
+                st.success("Categoria registrada!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao cadastrar categoria: {e}")
 
-# --- Exibir lançamentos existentes ---
-st.subheader("📜 Lançamentos Registrados")
+# carregar catálogo para o formulário
+cat_names, sub_by_cat = load_categories(uid)
 
-res = supa().table("transactions").select("*").eq("user_id", uid).order("date", desc=True).execute()
-data = res.data or []
+# =========================================================
+# Formulário de lançamento manual
+# =========================================================
+st.subheader("📝 Novo lançamento")
+
+with st.form("novo_lancamento", clear_on_submit=True):
+    c1, c2 = st.columns([1,3])
+    with c1:
+        date = st.date_input("Data")
+    with c2:
+        description = st.text_input("Descrição", placeholder="Ex.: Almoço, Uber, Pagamento de conta...")
+
+    c3, c4 = st.columns([1,2])
+    with c3:
+        amount = st.number_input("Valor (negativo = despesa, positivo = receita)", step=0.01, format="%.2f")
+    with c4:
+        # Categoria preferencialmente via catálogo
+        use_catalog = st.toggle("Usar catálogo de categorias", value=bool(cat_names))
+
+        if use_catalog and cat_names:
+            category = st.selectbox("Categoria", cat_names + ["(digitar manualmente)"])
+            if category == "(digitar manualmente)":
+                category = st.text_input("Categoria (manual)")
+                subcategory = st.text_input("Subcategoria (manual)")
+            else:
+                subs = sub_by_cat.get(category, ["—"])
+                sub = st.selectbox("Subcategoria", subs)
+                subcategory = None if sub == "—" else sub
+        else:
+            category = st.text_input("Categoria (manual)")
+            subcategory = st.text_input("Subcategoria (manual)")
+
+    tags = st.text_input("Tags (opcional, separadas por vírgula)", placeholder="ex.: nubank, ifood")
+
+    submitted = st.form_submit_button("Adicionar")
+    if submitted:
+        if not description or amount is None:
+            st.warning("Preencha ao menos **descrição** e **valor**.")
+        else:
+            try:
+                payload = {
+                    "user_id": uid,
+                    "account_id": aid,
+                    "date": str(date),
+                    "description": description.strip(),
+                    "amount": float(amount),
+                    "category": (category.strip() if category else None) or None,
+                    "subcategory": (subcategory.strip() if subcategory else None) or None,
+                    "tags": None if not tags else [t.strip() for t in tags.split(",") if t.strip()],
+                    "source_file": "manual",
+                }
+                supa().table("transactions").insert(payload).execute()
+                st.success("Lançamento inserido com sucesso!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao inserir lançamento: {e}")
+
+# =========================================================
+# Listagem de lançamentos
+# =========================================================
+st.subheader("📜 Lançamentos registrados")
+
+data = load_transactions(uid, aid)
 df = pd.DataFrame(data)
 
 if df.empty:
-    st.info("Nenhum lançamento encontrado.")
+    st.info("Nenhum lançamento encontrado para esta conta.")
 else:
-    st.dataframe(
-        df[["date","description","amount","category","subcategory","tags"]],
-        use_container_width=True,
-        height=500
-    )
+    view_cols = ["date", "description", "amount", "category", "subcategory", "tags"]
+    for col in view_cols:
+        if col not in df.columns:
+            df[col] = None
+    st.dataframe(df[view_cols], use_container_width=True, height=480)
 
-# --- Botão de exclusão ---
-if not df.empty:
+    # =====================================================
+    # Exclusão de lançamento
+    # =====================================================
     with st.expander("🗑 Excluir lançamento"):
-        to_delete = st.selectbox("Selecione o ID do lançamento a excluir", df["id"])
+        # mostra IDs e descrições recentes para facilitar
+        df_small = df[["id", "date", "description", "amount"]].copy()
+        df_small["label"] = df_small.apply(
+            lambda r: f'{r["id"][:8]}... | {r["date"]} | {r["description"][:30]} | R$ {r["amount"]:.2f}', axis=1
+        )
+        to_delete_label = st.selectbox("Selecione o lançamento", df_small["label"])
         if st.button("Excluir lançamento"):
-            supa().table("transactions").delete().eq("id", to_delete).execute()
-            st.success("Lançamento excluído.")
-            st.rerun()
+            try:
+                # pega o id pela label escolhida
+                row = df_small[df_small["label"] == to_delete_label].iloc[0]
+                supa().table("transactions").delete().eq("id", row["id"]).execute()
+                st.success("Lançamento excluído.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao excluir: {e}")
+
+# =========================================================
+# (Opcional) Depuração da sessão/token
+# =========================================================
+# with st.expander("🔧 DEBUG (ocultar em produção)"):
+#     st.write("User ID:", uid)
+#     st.write("Sessão:", st.session_state.get("session"))
