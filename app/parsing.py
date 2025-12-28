@@ -28,7 +28,20 @@ def from_csv(file_bytes, account_name):
     return normalize_df(df, account_name)
 
 def from_xlsx(file_bytes, account_name):
-    df = pd.read_excel(io.BytesIO(file_bytes))
+    """
+    Parse Excel files (.xlsx or .xls)
+    Automatically detects the correct engine to use
+    """
+    try:
+        # Try openpyxl first (for .xlsx files)
+        df = pd.read_excel(io.BytesIO(file_bytes), engine='openpyxl')
+    except Exception as e:
+        # If openpyxl fails, try xlrd (for old .xls files)
+        try:
+            df = pd.read_excel(io.BytesIO(file_bytes), engine='xlrd')
+        except Exception as e2:
+            # If both fail, let pandas decide
+            df = pd.read_excel(io.BytesIO(file_bytes))
     return normalize_df(df, account_name)
 
 def from_ofx(file_bytes, account_name):
