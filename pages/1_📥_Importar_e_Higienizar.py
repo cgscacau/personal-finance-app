@@ -17,10 +17,10 @@ if acc == "➕ Criar nova conta":
     with st.form("new_acc"):
         name = st.text_input("Nome da conta")
         inst = st.text_input("Instituição (opcional)")
-        tp = st.selectbox("Tipo", ["checking","savings","credit","cash","brokerage"])
+        tp = st.selectbox("Tipo", ["checking","savings","credit","investment","other"])
         s = st.form_submit_button("Criar")
         if s and name:
-            insert("accounts", {"user_id": uid, "name": name, "institution": inst, "type": tp})
+            insert("accounts", {"user_id": uid, "name": name, "institution": inst, "account_type": tp})
             st.success("Conta criada. Recarregue a página."); st.stop()
 else:
     account_name = acc
@@ -59,17 +59,22 @@ if uploaded:
             aid = [a["id"] for a in accounts if a["name"]==account_name][0]
             payload = []
             for _,r in df.iterrows():
+                # Determina tipo de transação baseado no valor
+                amount = float(r["amount"])
+                transaction_type = "income" if amount > 0 else "expense"
+                
                 payload.append({
                     "user_id": uid,
                     "account_id": aid,
                     "date": str(r["date"]),
                     "description": r["description"],
-                    "amount": float(r["amount"]),
+                    "amount": amount,
+                    "transaction_type": transaction_type,
                     "category": r.get("category"),
                     "subcategory": r.get("subcategory"),
                     "tags": None,
-                    "source_file": None,
-                    "hash": r["hash"]
+                    "notes": None,
+                    "hash_id": r["hash"]
                 })
-            supa().table("transactions").upsert(payload, on_conflict="hash").execute()
+            supa().table("transactions").upsert(payload, on_conflict="hash_id").execute()
             st.success("Importação concluída!")
