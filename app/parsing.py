@@ -1,8 +1,21 @@
 import io, re, hashlib
 import pandas as pd
-import pdfplumber
-from ofxparse import OfxParser
 from datetime import datetime
+
+# Importações opcionais com tratamento de erro
+try:
+    import pdfplumber
+    HAS_PDFPLUMBER = True
+except ImportError:
+    HAS_PDFPLUMBER = False
+    print("⚠️ pdfplumber não instalado. Importação de PDF desabilitada.")
+
+try:
+    from ofxparse import OfxParser
+    HAS_OFX = True
+except ImportError:
+    HAS_OFX = False
+    print("⚠️ ofxparse não instalado. Importação de OFX desabilitada.")
 
 COLS = ["date","description","amount","account","raw"]
 DATE_FORMATS = ["%d/%m/%Y","%Y-%m-%d","%d-%m-%Y","%m/%d/%Y"]
@@ -32,6 +45,9 @@ def from_xlsx(file_bytes, account_name):
     return normalize_df(df, account_name)
 
 def from_ofx(file_bytes, account_name):
+    if not HAS_OFX:
+        raise ImportError("ofxparse não está instalado. Execute: pip install ofxparse")
+    
     ofx = OfxParser.parse(io.BytesIO(file_bytes))
     rows = []
     for acct in ofx.accounts:
@@ -51,7 +67,9 @@ def from_pdf(file_bytes, account_name):
     Faz parsing de extratos PDF do Bradesco (Internet Banking)
     ou usa o padrão genérico se outro formato.
     """
-    import re, pdfplumber
+    if not HAS_PDFPLUMBER:
+        raise ImportError("pdfplumber não está instalado. Execute: pip install pdfplumber pdfminer.six")
+    
     rows = []
     text_full = ""
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
