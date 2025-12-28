@@ -14,6 +14,7 @@ python-dateutil>=2.9
 
 # Validation & Data Models
 pydantic>=2.5
+email-validator>=2.0
 
 # Testing
 pytest>=7.4
@@ -26,3 +27,12 @@ black>=23.11
 
 # Monitoring & Logging
 loguru>=0.7
+
+# Additional dependencies for Windows compatibility (optional)
+pywin32>=306; sys_platform == 'win32'
+win32-setctime>=1.1; sys_platform == 'win32'
+
+# PDF parsing dependencies
+pdfminer.six>=20221105
+beautifulsoup4>=4.12
+lxml>=4.9
