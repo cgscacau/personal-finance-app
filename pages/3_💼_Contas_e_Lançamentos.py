@@ -672,7 +672,7 @@ else:
                             key=f"desc_{row['id']}"
                         )
                     
-                    col_e3, col_e4, col_e5 = st.columns(3)
+                    col_e3, col_e4 = st.columns([1, 2])
                     
                     with col_e3:
                         edit_amount = st.number_input(
@@ -684,18 +684,101 @@ else:
                         )
                     
                     with col_e4:
-                        edit_cat = st.text_input(
-                            "Categoria",
-                            value=row.get('category', '') or '',
-                            key=f"cat_{row['id']}"
+                        # Toggle para usar catálogo ou entrada manual
+                        use_catalog_edit = st.toggle(
+                            "📚 Usar catálogo de categorias",
+                            value=bool(cat_names),
+                            key=f"use_catalog_{row['id']}",
+                            help="Ative para selecionar do catálogo"
                         )
                     
-                    with col_e5:
-                        edit_sub = st.text_input(
-                            "Subcategoria",
-                            value=row.get('subcategory', '') or '',
-                            key=f"sub_{row['id']}"
-                        )
+                    # ========== CATEGORIZAÇÃO ==========
+                    if use_catalog_edit and cat_names:
+                        # MODO CATÁLOGO
+                        col_cat, col_sub = st.columns(2)
+                        
+                        with col_cat:
+                            # Opções de categoria
+                            current_cat = row.get('category', '') or ''
+                            options_cat = [""] + cat_names + ["✏️ (digitar manualmente)"]
+                            
+                            # Define o índice inicial baseado na categoria atual
+                            try:
+                                cat_index = options_cat.index(current_cat) if current_cat in options_cat else 0
+                            except:
+                                cat_index = 0
+                            
+                            edit_cat = st.selectbox(
+                                "Categoria",
+                                options_cat,
+                                index=cat_index,
+                                key=f"cat_{row['id']}",
+                                help="Selecione do catálogo ou digite manualmente"
+                            )
+                        
+                        # Se escolheu digitar manualmente
+                        if edit_cat == "✏️ (digitar manualmente)":
+                            with col_sub:
+                                edit_cat = st.text_input(
+                                    "Digite a categoria",
+                                    value=current_cat,
+                                    key=f"cat_manual_{row['id']}"
+                                )
+                            
+                            edit_sub = st.text_input(
+                                "Digite a subcategoria (opcional)",
+                                value=row.get('subcategory', '') or '',
+                                key=f"sub_manual_{row['id']}"
+                            )
+                        
+                        elif edit_cat:
+                            # Se selecionou uma categoria do catálogo
+                            with col_sub:
+                                subs = sub_by_cat.get(edit_cat, [])
+                                current_sub = row.get('subcategory', '') or ''
+                                
+                                if subs:
+                                    options_sub = ["(sem subcategoria)"] + subs
+                                    
+                                    # Define o índice inicial baseado na subcategoria atual
+                                    try:
+                                        sub_index = options_sub.index(current_sub) if current_sub in options_sub else 0
+                                    except:
+                                        sub_index = 0
+                                    
+                                    edit_sub = st.selectbox(
+                                        "Subcategoria",
+                                        options_sub,
+                                        index=sub_index,
+                                        key=f"sub_{row['id']}",
+                                        help="Selecione uma subcategoria"
+                                    )
+                                    
+                                    if edit_sub == "(sem subcategoria)":
+                                        edit_sub = None
+                                else:
+                                    st.info(f"ℹ️ '{edit_cat}' não possui subcategorias")
+                                    edit_sub = None
+                        else:
+                            edit_sub = None
+                    
+                    else:
+                        # MODO MANUAL
+                        col_cat, col_sub = st.columns(2)
+                        
+                        with col_cat:
+                            edit_cat = st.text_input(
+                                "Categoria",
+                                value=row.get('category', '') or '',
+                                key=f"cat_{row['id']}"
+                            )
+                        
+                        with col_sub:
+                            edit_sub = st.text_input(
+                                "Subcategoria",
+                                value=row.get('subcategory', '') or '',
+                                key=f"sub_{row['id']}"
+                            )
                     
                     edit_tags = st.text_input(
                         "Tags (separadas por vírgula)",
