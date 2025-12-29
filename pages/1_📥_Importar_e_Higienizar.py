@@ -31,23 +31,49 @@ if uploaded:
     for f in uploaded:
         data = f.read()
         ext = f.name.lower().split(".")[-1]
-        if ext in ["csv"]:
-            df = from_csv(data, account_name)
-        elif ext in ["xlsx","xls"]:
-            df = from_xlsx(data, account_name)
-        elif ext in ["ofx"]:
-            df = from_ofx(data, account_name)
-        elif ext in ["pdf"]:
-            df = from_pdf(data, account_name)
-        else:
-            st.warning(f"Formato não suportado: {f.name}")
+        
+        st.info(f"📄 Processando: **{f.name}** ({len(data)} bytes)")
+        
+        try:
+            if ext in ["csv"]:
+                df = from_csv(data, account_name)
+            elif ext in ["xlsx","xls"]:
+                df = from_xlsx(data, account_name)
+            elif ext in ["ofx"]:
+                df = from_ofx(data, account_name)
+            elif ext in ["pdf"]:
+                df = from_pdf(data, account_name)
+            else:
+                st.warning(f"Formato não suportado: {f.name}")
+                continue
+            
+            st.success(f"✅ {len(df)} transações encontradas em {f.name}")
+            
+            # Mostrar preview dos dados brutos
+            with st.expander(f"🔍 Ver dados brutos de {f.name}"):
+                st.dataframe(df, use_container_width=True)
+            
+            frames.append(df)
+            
+        except Exception as e:
+            st.error(f"❌ Erro ao processar {f.name}: {str(e)}")
+            
+            # Mostrar preview do arquivo para debug
+            with st.expander("🔍 Ver conteúdo do arquivo (primeiras linhas)"):
+                try:
+                    # Tentar ler como texto
+                    import io
+                    text_preview = data.decode('utf-8', errors='ignore')[:2000]
+                    st.code(text_preview)
+                except:
+                    st.warning("Não foi possível exibir o preview do arquivo")
             continue
-        frames.append(df)
 
     if frames:
         df = pd.concat(frames, ignore_index=True).drop_duplicates("hash")
         if df.empty:
-            st.warning("Nenhuma transação válida detectada. Verifique o layout do arquivo ou ajuste as regras de parsing.")
+            st.warning("⚠️ Nenhuma transação válida detectada após processar todos os arquivos.")
+            st.info("💡 **Dicas:**\n- Verifique se o arquivo contém transações\n- Confirme se as colunas têm os nomes corretos (Data, Descrição, Valor)\n- Tente abrir o arquivo no Excel para ver sua estrutura")
             st.stop()
         # carregar regras do usuário
         rules = supa().table("categorization_rules").select("*").eq("user_id", uid).execute().data

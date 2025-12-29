@@ -152,15 +152,52 @@ def from_pdf(file_bytes, account_name):
 
 
 def normalize_df(df, account_name):
+    """
+    Normaliza dataframe para formato padrão
+    Aceita múltiplas variações de nomes de colunas
+    """
     mapping = {}
+    
+    # Lista expandida de possíveis nomes de colunas
+    date_cols = [
+        "data", "date", "dt", "posted date", "transaction date",
+        "data de lançamento", "data lancamento", "data da transação",
+        "data transacao", "dt movimentação", "dt movimentacao",
+        "data movimentação", "data movimentacao"
+    ]
+    
+    description_cols = [
+        "descricao", "descrição", "description", "memo", "historico", "histórico",
+        "histórico da transação", "historico da transacao", "detalhes",
+        "descrição do lançamento", "descricao do lancamento", "transaction",
+        "detalhe", "transacao", "transação"
+    ]
+    
+    amount_cols = [
+        "valor", "amount", "ammount", "valor (r$)", "total", "value",
+        "vlr. lançamento", "vlr lancamento", "vlr", "montante",
+        "valor da transação", "valor da transacao", "débito/crédito",
+        "debito/credito", "entrada/saída", "entrada/saida"
+    ]
+    
+    # Buscar matching de colunas (case insensitive)
     for col in df.columns:
         lc = str(col).strip().lower()
-        if lc in ["data","date","dt","posted date","transaction date"]:
+        
+        if any(date_col in lc for date_col in date_cols):
             mapping["date"] = col
-        elif lc in ["descricao","descrição","description","memo","historico","histórico"]:
+        elif any(desc_col in lc for desc_col in description_cols):
             mapping["description"] = col
-        elif lc in ["valor","amount","ammount","valor (r$)","total"]:
+        elif any(amt_col in lc for amt_col in amount_cols):
             mapping["amount"] = col
+
+    # Se não encontrou colunas, tentar adivinhar pelas primeiras 3 colunas
+    if not mapping:
+        cols = list(df.columns)
+        if len(cols) >= 3:
+            mapping["date"] = cols[0]  # Primeira coluna geralmente é data
+            mapping["description"] = cols[1]  # Segunda é descrição
+            mapping["amount"] = cols[2]  # Terceira é valor
 
     out = pd.DataFrame()
     # preenche com None se faltarem colunas
@@ -168,7 +205,7 @@ def normalize_df(df, account_name):
     out["description"] = df[mapping["description"]].astype(str) if "description" in mapping else ""
     if "amount" in mapping:
         out["amount"] = pd.to_numeric(
-            df[mapping["amount"]].astype(str).str.replace(".","").str.replace(",","."),
+            df[mapping["amount"]].astype(str).str.replace(".","").str.replace(",",".").str.replace("R$","").str.strip(),
             errors="coerce"
         )
     else:
