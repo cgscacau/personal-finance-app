@@ -690,8 +690,12 @@ else:
                     st.session_state[f"edit_cat_{row['id']}"] = selected_cat
                 
                 with col_sub_select:
+                    # DEBUG
+                    st.caption(f"🔍 DEBUG: selected_cat='{selected_cat}'")
+                    
                     if selected_cat and selected_cat != "":
                         subs = sub_by_cat_edit.get(selected_cat, [])
+                        st.caption(f"🔍 DEBUG: subs={subs}")
                         current_sub = st.session_state[f"edit_sub_{row['id']}"]
                         
                         if subs:
