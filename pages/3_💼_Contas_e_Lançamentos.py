@@ -653,6 +653,9 @@ else:
             
             # Formulário de edição (se ativo)
             if st.session_state.get(f"editing_{row['id']}", False):
+                # IMPORTANTE: Recarrega categorias para garantir dados atualizados
+                cat_names_edit, sub_by_cat_edit = load_categories(uid)
+                
                 with st.form(key=f"form_edit_{row['id']}"):
                     st.subheader(f"✏️ Editando: {row['description']}")
                     
@@ -687,20 +690,20 @@ else:
                         # Toggle para usar catálogo ou entrada manual
                         use_catalog_edit = st.toggle(
                             "📚 Usar catálogo de categorias",
-                            value=bool(cat_names),
+                            value=bool(cat_names_edit),
                             key=f"use_catalog_{row['id']}",
                             help="Ative para selecionar do catálogo"
                         )
                     
                     # ========== CATEGORIZAÇÃO ==========
-                    if use_catalog_edit and cat_names:
+                    if use_catalog_edit and cat_names_edit:
                         # MODO CATÁLOGO
                         col_cat, col_sub = st.columns(2)
                         
                         with col_cat:
                             # Opções de categoria
                             current_cat = row.get('category', '') or ''
-                            options_cat = [""] + cat_names + ["✏️ (digitar manualmente)"]
+                            options_cat = [""] + cat_names_edit + ["✏️ (digitar manualmente)"]
                             
                             # Define o índice inicial baseado na categoria atual
                             try:
@@ -734,7 +737,7 @@ else:
                         elif edit_cat and edit_cat != "":
                             # Se selecionou uma categoria do catálogo
                             with col_sub:
-                                subs = sub_by_cat.get(edit_cat, [])
+                                subs = sub_by_cat_edit.get(edit_cat, [])
                                 current_sub = row.get('subcategory', '') or ''
                                 
                                 if subs:
