@@ -28,49 +28,63 @@ def from_csv(file_bytes, account_name):
     Parse CSV files with automatic encoding and delimiter detection
     Includes special handling for Bradesco format
     """
+    from loguru import logger
+    
     # Try to detect Bradesco format first (only check first 1000 bytes)
     try:
+        # Tentar detectar formato Bradesco sem decodificar ainda
         sample = file_bytes[:1000].decode('windows-1252', errors='ignore')
         if 'Extrato de: Ag:' in sample and 'Crédito (R$)' in sample:
+            logger.info("🏦 Detectado formato Bradesco, usando parser específico")
             # Full decode for Bradesco parsing
             text = file_bytes.decode('windows-1252', errors='replace')
             result = _parse_bradesco_csv(text, account_name)
             # Se o parser específico não encontrou nada, tentar método genérico
             if len(result) == 0:
-                from loguru import logger
                 logger.warning("Parser específico do Bradesco não encontrou transações, tentando método alternativo")
                 # Tentar processar como CSV normal pulando a primeira linha
                 try:
                     df = pd.read_csv(io.BytesIO(file_bytes), encoding='windows-1252', delimiter=';', skiprows=1)
                     return normalize_df(df, account_name)
-                except:
+                except Exception as inner_e:
+                    logger.error(f"Método alternativo também falhou: {inner_e}")
                     pass
+            else:
+                logger.info(f"✅ Parser Bradesco retornou {len(result)} transações")
             return result
     except Exception as e:
-        from loguru import logger
-        logger.error(f"Erro no parser do Bradesco: {e}")
+        logger.error(f"Erro no parser do Bradesco: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         # If detection fails, continue with normal parsing
         pass
     
-    encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'windows-1252', 'cp1252']
+    # Try with most common encodings for Brazilian banks (prioritize Windows-1252)
+    encodings = ['windows-1252', 'latin-1', 'iso-8859-1', 'cp1252', 'utf-8']
     delimiters = [',', ';', '\t', '|']
+    
+    logger.info("🔍 Tentando detectar encoding e delimitador automaticamente")
     
     # Try different encoding and delimiter combinations
     for encoding in encodings:
         for delimiter in delimiters:
             try:
-                df = pd.read_csv(io.BytesIO(file_bytes), encoding=encoding, delimiter=delimiter, skiprows=0)
+                df = pd.read_csv(io.BytesIO(file_bytes), encoding=encoding, delimiter=delimiter, skiprows=0, on_bad_lines='skip')
                 # Check if we got at least 2 columns (valid CSV)
                 if len(df.columns) > 1 and len(df) > 0:
+                    logger.info(f"✅ Sucesso com encoding={encoding}, delimiter='{delimiter}'")
                     return normalize_df(df, account_name)
-            except (UnicodeDecodeError, UnicodeError):
+            except (UnicodeDecodeError, UnicodeError) as e:
+                logger.debug(f"❌ {encoding} + '{delimiter}' falhou: {e}")
                 continue
-            except Exception:
+            except Exception as e:
+                logger.debug(f"❌ {encoding} + '{delimiter}' erro: {e}")
                 continue
     
     # If all combinations fail, try with error handling and auto-detection
+    logger.warning("⚠️ Nenhuma combinação funcionou, tentando auto-detecção")
     try:
-        df = pd.read_csv(io.BytesIO(file_bytes), encoding='utf-8', errors='ignore', sep=None, engine='python')
+        df = pd.read_csv(io.BytesIO(file_bytes), encoding='windows-1252', errors='ignore', sep=None, engine='python', on_bad_lines='skip')
         return normalize_df(df, account_name)
     except Exception as e:
         raise ValueError(f"Não foi possível ler o arquivo CSV. Verifique se o formato está correto. Erro: {str(e)}")
