@@ -16,13 +16,32 @@ with col1:
     st.write("")
 
 with col2:
-    if st.button("🗑️ Limpar Categorias", help="DELETA todas as suas categorias"):
-        try:
-            supa().table("categories").delete().eq("user_id", uid).execute()
-            st.success("✅ Categorias deletadas!")
-            st.rerun()
-        except Exception as e:
-            st.error(f"❌ Erro: {e}")
+    if st.button("🗑️ DELETAR TUDO", help="DELETA todas as suas categorias", type="secondary"):
+        with st.spinner("Deletando todas as categorias..."):
+            try:
+                # Busca todas
+                all_cats = supa().table("categories").select("id").eq("user_id", uid).execute()
+                
+                if all_cats.data:
+                    count = len(all_cats.data)
+                    st.write(f"Encontradas {count} categorias. Deletando...")
+                    
+                    # Deleta uma por uma
+                    deleted = 0
+                    for cat in all_cats.data:
+                        try:
+                            supa().table("categories").delete().eq("id", cat['id']).execute()
+                            deleted += 1
+                        except:
+                            pass
+                    
+                    st.success(f"✅ {deleted} de {count} categorias deletadas!")
+                else:
+                    st.info("Nenhuma categoria encontrada.")
+                
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Erro: {e}")
 
 with col3:
     if st.button("🌱 Criar Base Limpa", type="primary", help="DELETA TUDO e cria 14 categorias organizadas do zero"):
@@ -52,8 +71,24 @@ with col3:
         
         with st.spinner("🗑️ Limpando categorias antigas..."):
             try:
-                supa().table("categories").delete().eq("user_id", uid).execute()
-            except:
+                # Busca TODAS as categorias do usuário
+                old_cats = supa().table("categories").select("id").eq("user_id", uid).execute()
+                
+                if old_cats.data:
+                    st.write(f"Encontradas {len(old_cats.data)} categorias antigas. Deletando...")
+                    
+                    # Deleta uma por uma para garantir
+                    for cat in old_cats.data:
+                        try:
+                            supa().table("categories").delete().eq("id", cat['id']).execute()
+                        except:
+                            pass
+                    
+                    st.write("✅ Categorias antigas deletadas!")
+                else:
+                    st.write("Nenhuma categoria antiga encontrada.")
+            except Exception as e:
+                st.warning(f"Aviso durante limpeza: {e}")
                 pass
         
         with st.spinner("🌱 Criando categorias organizadas..."):
@@ -82,8 +117,24 @@ with col3:
                     st.error(f"Erro ao criar {category}: {e}")
                     continue
         
-        st.success(f"✅ Base criada! {total_cats} categorias e {total_subs} subcategorias!")
-        st.balloons()
+        # Verifica o que foi realmente criado
+        try:
+            verify = supa().table("categories").select("*").eq("user_id", uid).execute()
+            verify_data = verify.data or []
+            
+            principals = [c for c in verify_data if not c.get('parent_name')]
+            subs_created = [c for c in verify_data if c.get('parent_name')]
+            
+            st.success(f"✅ Base criada!")
+            st.info(f"📊 Verificação: {len(principals)} categorias principais e {len(subs_created)} subcategorias no banco")
+            
+            if len(principals) != 14:
+                st.warning(f"⚠️ Esperado 14 categorias, mas encontrado {len(principals)}!")
+            
+            st.balloons()
+        except Exception as e:
+            st.error(f"Erro na verificação: {e}")
+        
         st.rerun()
 
 st.divider()
