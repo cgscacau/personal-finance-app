@@ -34,8 +34,21 @@ def from_csv(file_bytes, account_name):
         if 'Extrato de: Ag:' in sample and 'Crédito (R$)' in sample:
             # Full decode for Bradesco parsing
             text = file_bytes.decode('windows-1252', errors='replace')
-            return _parse_bradesco_csv(text, account_name)
+            result = _parse_bradesco_csv(text, account_name)
+            # Se o parser específico não encontrou nada, tentar método genérico
+            if len(result) == 0:
+                from loguru import logger
+                logger.warning("Parser específico do Bradesco não encontrou transações, tentando método alternativo")
+                # Tentar processar como CSV normal pulando a primeira linha
+                try:
+                    df = pd.read_csv(io.BytesIO(file_bytes), encoding='windows-1252', delimiter=';', skiprows=1)
+                    return normalize_df(df, account_name)
+                except:
+                    pass
+            return result
     except Exception as e:
+        from loguru import logger
+        logger.error(f"Erro no parser do Bradesco: {e}")
         # If detection fails, continue with normal parsing
         pass
     
@@ -69,16 +82,19 @@ def _parse_bradesco_csv(text, account_name):
     O arquivo vem todo em uma linha, separado por ponto-e-vírgula
     """
     import re
+    from loguru import logger
     rows = []
     
     # Split by semicolon
     fields = [f.strip() for f in text.split(';')]
+    logger.info(f"Bradesco parser: {len(fields)} campos encontrados")
     
     # Encontrar o índice onde começam os dados (após o cabeçalho)
     start_idx = 0
     for i, field in enumerate(fields):
         if re.match(r'^\d{2}/\d{2}/\d{2,4}$', field):
             start_idx = i
+            logger.info(f"Primeira data encontrada no índice {i}: {field}")
             break
     
     # Processar campos em grupos de 6: Data, Histórico, Docto, Crédito, Débito, Saldo
@@ -140,6 +156,7 @@ def _parse_bradesco_csv(text, account_name):
         
         i += 6
     
+    logger.info(f"Bradesco parser: {len(rows)} transações extraídas")
     df = pd.DataFrame(rows)
     return finalize(df)
 
