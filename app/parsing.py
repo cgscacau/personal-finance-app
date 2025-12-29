@@ -28,12 +28,15 @@ def from_csv(file_bytes, account_name):
     Parse CSV files with automatic encoding and delimiter detection
     Includes special handling for Bradesco format
     """
-    # Try to detect Bradesco format first
+    # Try to detect Bradesco format first (only check first 1000 bytes)
     try:
-        text = file_bytes.decode('windows-1252', errors='ignore')
-        if 'Extrato de: Ag:' in text and 'Crédito (R$)' in text and 'Débito (R$)' in text:
+        sample = file_bytes[:1000].decode('windows-1252', errors='ignore')
+        if 'Extrato de: Ag:' in sample and 'Crédito (R$)' in sample:
+            # Full decode for Bradesco parsing
+            text = file_bytes.decode('windows-1252', errors='replace')
             return _parse_bradesco_csv(text, account_name)
-    except:
+    except Exception as e:
+        # If detection fails, continue with normal parsing
         pass
     
     encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'windows-1252', 'cp1252']

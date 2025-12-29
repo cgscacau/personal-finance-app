@@ -56,17 +56,25 @@ if uploaded:
             frames.append(df)
             
         except Exception as e:
-            st.error(f"❌ Erro ao processar {f.name}: {str(e)}")
+            st.error(f"❌ Erro ao processar {f.name}")
+            st.code(f"Tipo de erro: {type(e).__name__}\nMensagem: {str(e)}")
             
             # Mostrar preview do arquivo para debug
-            with st.expander("🔍 Ver conteúdo do arquivo (primeiras linhas)"):
+            with st.expander("🔍 Ver conteúdo do arquivo (primeiras 500 caracteres)"):
                 try:
-                    # Tentar ler como texto
-                    import io
-                    text_preview = data.decode('utf-8', errors='ignore')[:2000]
-                    st.code(text_preview)
+                    # Tentar diferentes encodings
+                    for enc in ['utf-8', 'latin-1', 'windows-1252', 'iso-8859-1']:
+                        try:
+                            text_preview = data[:500].decode(enc, errors='ignore')
+                            st.write(f"**Encoding usado:** {enc}")
+                            st.code(text_preview)
+                            break
+                        except:
+                            continue
                 except:
                     st.warning("Não foi possível exibir o preview do arquivo")
+            
+            st.info("💡 **Dica:** Tente converter o arquivo para Excel (.xlsx) no Excel/LibreOffice")
             continue
 
     if frames:
