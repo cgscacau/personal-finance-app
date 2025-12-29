@@ -8,67 +8,81 @@ require_login()
 uid = current_user_id()
 
 # --- Botão para popular categorias padrão ---
-st.info("💡 **Primeira vez aqui?** Clique no botão abaixo para criar uma base completa de categorias brasileiras!")
+st.warning("⚠️ **Categorias desorganizadas?** Use o botão abaixo para LIMPAR TUDO e criar uma base organizada!")
 
-col1, col2 = st.columns([3, 1])
+col1, col2, col3 = st.columns([2, 1, 1])
 
 with col1:
     st.write("")
 
 with col2:
-    if st.button("🌱 Criar Base de Categorias", type="primary", help="Cria 18 categorias com 60+ subcategorias"):
-        # Importar e executar o seed
-        from scripts.seed_categories import DEFAULT_CATEGORIES
+    if st.button("🗑️ Limpar Categorias", help="DELETA todas as suas categorias"):
+        try:
+            supa().table("categories").delete().eq("user_id", uid).execute()
+            st.success("✅ Categorias deletadas!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Erro: {e}")
+
+with col3:
+    if st.button("🌱 Criar Base Limpa", type="primary", help="Deleta tudo e cria 14 categorias organizadas"):
+        # Categorias padrão CORRIGIDAS
+        DEFAULT_CATEGORIES = {
+            # DESPESAS
+            "Alimentação": ["Supermercado", "Restaurante", "Delivery", "Padaria", "Lanchonete"],
+            "Transporte": ["Combustível", "Uber/99", "Ônibus", "Estacionamento", "Manutenção", "IPVA"],
+            "Moradia": ["Aluguel", "Condomínio", "IPTU", "Água", "Luz", "Gás", "Internet"],
+            "Saúde": ["Plano de Saúde", "Farmácia", "Médico", "Dentista", "Exames", "Academia"],
+            "Educação": ["Mensalidade", "Material", "Livros", "Cursos"],
+            "Lazer": ["Cinema", "Shows", "Viagens", "Streaming", "Jogos"],
+            "Vestuário": ["Roupas", "Calçados", "Acessórios"],
+            "Beleza": ["Salão", "Produtos", "Cosméticos"],
+            "Pets": ["Ração", "Veterinário", "Produtos"],
+            # RECEITAS
+            "Salário": ["Salário Mensal", "13º", "Férias", "Bônus"],
+            "Freelance": ["Projetos", "Consultorias", "Serviços"],
+            "Rendimentos": ["Dividendos", "Juros", "Aluguel"],
+            # OUTROS
+            "Transferências": ["Entre Contas", "Pix", "TED", "DOC"],
+            "Doações": ["Caridade", "Presentes", "Ajuda Família"],
+        }
         
         total_cats = 0
         total_subs = 0
         
-        with st.spinner("Criando categorias..."):
-            for category, data in DEFAULT_CATEGORIES.items():
-                subcategories = data["subcategories"]
-                kind = data["kind"]
-                
+        with st.spinner("🗑️ Limpando categorias antigas..."):
+            try:
+                supa().table("categories").delete().eq("user_id", uid).execute()
+            except:
+                pass
+        
+        with st.spinner("🌱 Criando categorias organizadas..."):
+            for category, subcategories in DEFAULT_CATEGORIES.items():
                 try:
-                    # Verifica se já existe
-                    check = supa().table("categories")\
-                        .select("*")\
-                        .eq("user_id", uid)\
-                        .eq("name", category)\
-                        .is_("parent_name", "null")\
-                        .execute()
-                    
-                    if not check.data:
-                        supa().table("categories").insert({
-                            "user_id": uid,
-                            "name": category,
-                            "parent_name": None,
-                            "kind": kind
-                        }).execute()
-                        total_cats += 1
+                    # Cria categoria principal
+                    supa().table("categories").insert({
+                        "user_id": uid,
+                        "name": category,
+                        "parent_name": None,
+                        "kind": "both"
+                    }).execute()
+                    total_cats += 1
                     
                     # Cria subcategorias
                     for sub in subcategories:
-                        sub_check = supa().table("categories")\
-                            .select("*")\
-                            .eq("user_id", uid)\
-                            .eq("name", sub)\
-                            .eq("parent_name", category)\
-                            .execute()
-                        
-                        if not sub_check.data:
-                            supa().table("categories").insert({
-                                "user_id": uid,
-                                "name": sub,
-                                "parent_name": category,
-                                "kind": kind
-                            }).execute()
-                            total_subs += 1
+                        supa().table("categories").insert({
+                            "user_id": uid,
+                            "name": sub,
+                            "parent_name": category,
+                            "kind": "both"
+                        }).execute()
+                        total_subs += 1
                 
                 except Exception as e:
                     st.error(f"Erro ao criar {category}: {e}")
                     continue
         
-        st.success(f"✅ Base criada! {total_cats} categorias e {total_subs} subcategorias adicionadas!")
+        st.success(f"✅ Base criada! {total_cats} categorias e {total_subs} subcategorias!")
         st.balloons()
         st.rerun()
 
