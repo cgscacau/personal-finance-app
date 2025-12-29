@@ -95,3 +95,4 @@ st.sidebar.caption("⚠️ Lembre-se de fazer logout ao usar computadores compar
 # =========================================================
 st.markdown("---")
 st.caption("💡 **Dica:** Explore todas as funcionalidades usando o menu lateral!")
+# Update Mon Dec 29 09:24:28 UTC 2025
