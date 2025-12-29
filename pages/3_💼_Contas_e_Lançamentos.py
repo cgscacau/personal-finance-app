@@ -731,7 +731,7 @@ else:
                                 key=f"sub_manual_{row['id']}"
                             )
                         
-                        elif edit_cat:
+                        elif edit_cat and edit_cat != "":
                             # Se selecionou uma categoria do catálogo
                             with col_sub:
                                 subs = sub_by_cat.get(edit_cat, [])
@@ -746,7 +746,7 @@ else:
                                     except:
                                         sub_index = 0
                                     
-                                    edit_sub = st.selectbox(
+                                    selected_sub = st.selectbox(
                                         "Subcategoria",
                                         options_sub,
                                         index=sub_index,
@@ -754,12 +754,16 @@ else:
                                         help="Selecione uma subcategoria"
                                     )
                                     
-                                    if edit_sub == "(sem subcategoria)":
+                                    # Define edit_sub baseado na seleção
+                                    if selected_sub == "(sem subcategoria)":
                                         edit_sub = None
+                                    else:
+                                        edit_sub = selected_sub
                                 else:
                                     st.info(f"ℹ️ '{edit_cat}' não possui subcategorias")
                                     edit_sub = None
                         else:
+                            # Nenhuma categoria selecionada
                             edit_sub = None
                     
                     else:
@@ -796,13 +800,22 @@ else:
                                 if edit_tags:
                                     tags_list = [t.strip() for t in edit_tags.split(",") if t.strip()]
                                 
+                                # Processa categoria e subcategoria
+                                final_cat = None
+                                if edit_cat and str(edit_cat).strip() and edit_cat != "(sem subcategoria)":
+                                    final_cat = str(edit_cat).strip()
+                                
+                                final_sub = None
+                                if edit_sub and str(edit_sub).strip() and edit_sub != "(sem subcategoria)":
+                                    final_sub = str(edit_sub).strip()
+                                
                                 # Atualiza no banco
                                 supa().table("transactions").update({
                                     "date": str(edit_date),
-                                    "description": edit_desc.strip(),
+                                    "description": edit_desc.strip() if edit_desc else "",
                                     "amount": float(edit_amount),
-                                    "category": edit_cat.strip() if edit_cat.strip() else None,
-                                    "subcategory": edit_sub.strip() if edit_sub.strip() else None,
+                                    "category": final_cat,
+                                    "subcategory": final_sub,
                                     "tags": tags_list,
                                 }).eq("id", row['id']).execute()
                                 

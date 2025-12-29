@@ -7,6 +7,73 @@ st.title("🧠 Regras de Categorização")
 require_login()
 uid = current_user_id()
 
+# --- Botão para popular categorias padrão ---
+st.info("💡 **Primeira vez aqui?** Clique no botão abaixo para criar uma base completa de categorias brasileiras!")
+
+col1, col2 = st.columns([3, 1])
+
+with col1:
+    st.write("")
+
+with col2:
+    if st.button("🌱 Criar Base de Categorias", type="primary", help="Cria 18 categorias com 60+ subcategorias"):
+        # Importar e executar o seed
+        from scripts.seed_categories import DEFAULT_CATEGORIES
+        
+        total_cats = 0
+        total_subs = 0
+        
+        with st.spinner("Criando categorias..."):
+            for category, data in DEFAULT_CATEGORIES.items():
+                subcategories = data["subcategories"]
+                kind = data["kind"]
+                
+                try:
+                    # Verifica se já existe
+                    check = supa().table("categories")\
+                        .select("*")\
+                        .eq("user_id", uid)\
+                        .eq("name", category)\
+                        .is_("parent_name", "null")\
+                        .execute()
+                    
+                    if not check.data:
+                        supa().table("categories").insert({
+                            "user_id": uid,
+                            "name": category,
+                            "parent_name": None,
+                            "kind": kind
+                        }).execute()
+                        total_cats += 1
+                    
+                    # Cria subcategorias
+                    for sub in subcategories:
+                        sub_check = supa().table("categories")\
+                            .select("*")\
+                            .eq("user_id", uid)\
+                            .eq("name", sub)\
+                            .eq("parent_name", category)\
+                            .execute()
+                        
+                        if not sub_check.data:
+                            supa().table("categories").insert({
+                                "user_id": uid,
+                                "name": sub,
+                                "parent_name": category,
+                                "kind": kind
+                            }).execute()
+                            total_subs += 1
+                
+                except Exception as e:
+                    st.error(f"Erro ao criar {category}: {e}")
+                    continue
+        
+        st.success(f"✅ Base criada! {total_cats} categorias e {total_subs} subcategorias adicionadas!")
+        st.balloons()
+        st.rerun()
+
+st.divider()
+
 # --- Carregar regras do usuário com colunas garantidas ---
 res = supa().table("categorization_rules").select("*").eq("user_id", uid).order("priority").execute()
 rules = res.data or []
