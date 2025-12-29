@@ -113,14 +113,18 @@ def _parse_bradesco_csv(text, account_name):
         debit_str = fields[i+4].strip().replace('"', '')
         saldo_str = fields[i+5].strip().replace('"', '')
         
+        logger.info(f"[{i}] Date: {date_str} | Hist: {historic[:40]} | Cred: '{credit_str}' | Deb: '{debit_str}'")
+        
         # Skip SALDO ANTERIOR
         if 'SALDO ANTERIOR' in historic.upper():
+            logger.info("  → Pulando SALDO ANTERIOR")
             i += 6
             continue
         
         # Parse date
         date = _parse_dates(date_str)
         if not date:
+            logger.warning(f"  → Data inválida: {date_str}")
             i += 6
             continue
         
@@ -129,14 +133,18 @@ def _parse_bradesco_csv(text, account_name):
         try:
             if credit_str and credit_str not in ['', '-', '0', '0,00']:
                 amount = float(credit_str.replace('.', '').replace(',', '.'))
+                logger.info(f"  → Crédito: {credit_str} = R$ {amount}")
             elif debit_str and debit_str not in ['', '-', '0', '0,00']:
                 # Remover o sinal de menos se já estiver (pois já vamos adicionar)
                 debit_clean = debit_str.replace('-', '').replace('.', '').replace(',', '.')
                 amount = -float(debit_clean)
-        except ValueError:
+                logger.info(f"  → Débito: {debit_str} = R$ {amount}")
+        except ValueError as e:
+            logger.error(f"  → Erro ao converter: cred='{credit_str}', deb='{debit_str}': {e}")
             pass
         
         # Se temos data e valor, adicionar
+        skip_extra = 0
         if date and amount is not None and amount != 0:
             # Verificar se o próximo campo é uma descrição adicional (Des:)
             full_description = historic
@@ -144,7 +152,8 @@ def _parse_bradesco_csv(text, account_name):
                 next_field = fields[i+6].strip()
                 if next_field.startswith('Des:') or next_field.startswith('Remet.'):
                     full_description += ' - ' + next_field
-                    i += 1  # Pular este campo extra
+                    skip_extra = 1  # Marcar para pular este campo extra
+                    logger.info(f"  → Desc extra: {next_field[:50]}")
             
             rows.append({
                 'date': date,
@@ -153,8 +162,11 @@ def _parse_bradesco_csv(text, account_name):
                 'account': account_name,
                 'raw': f"{date_str};{historic};{docto};{credit_str};{debit_str};{saldo_str}"
             })
+            logger.info(f"  ✅ Transação #{len(rows)}: {date} | {full_description[:40]} | R$ {amount:,.2f}")
+        else:
+            logger.warning(f"  ❌ Ignorado: date={date}, amount={amount}")
         
-        i += 6
+        i += 6 + skip_extra
     
     logger.info(f"Bradesco parser: {len(rows)} transações extraídas")
     df = pd.DataFrame(rows)
