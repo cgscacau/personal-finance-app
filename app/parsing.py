@@ -26,8 +26,16 @@ def _hash_row(row):
 def from_csv(file_bytes, account_name):
     """
     Parse CSV files with automatic encoding and delimiter detection
-    Tries multiple common encodings and delimiters used by Brazilian banks
+    Includes special handling for Bradesco format
     """
+    # Try to detect Bradesco format first
+    try:
+        text = file_bytes.decode('windows-1252', errors='ignore')
+        if 'Extrato de: Ag:' in text and 'Crédito (R$)' in text and 'Débito (R$)' in text:
+            return _parse_bradesco_csv(text, account_name)
+    except:
+        pass
+    
     encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'windows-1252', 'cp1252']
     delimiters = [',', ';', '\t', '|']
     
@@ -35,9 +43,9 @@ def from_csv(file_bytes, account_name):
     for encoding in encodings:
         for delimiter in delimiters:
             try:
-                df = pd.read_csv(io.BytesIO(file_bytes), encoding=encoding, delimiter=delimiter)
+                df = pd.read_csv(io.BytesIO(file_bytes), encoding=encoding, delimiter=delimiter, skiprows=0)
                 # Check if we got at least 2 columns (valid CSV)
-                if len(df.columns) > 1:
+                if len(df.columns) > 1 and len(df) > 0:
                     return normalize_df(df, account_name)
             except (UnicodeDecodeError, UnicodeError):
                 continue
@@ -50,6 +58,70 @@ def from_csv(file_bytes, account_name):
         return normalize_df(df, account_name)
     except Exception as e:
         raise ValueError(f"Não foi possível ler o arquivo CSV. Verifique se o formato está correto. Erro: {str(e)}")
+
+def _parse_bradesco_csv(text, account_name):
+    """
+    Parser específico para CSV do Bradesco Internet Banking
+    Formato: Data;Histórico;Docto.;Crédito (R$);Débito (R$);Saldo (R$)
+    """
+    import re
+    rows = []
+    
+    # Split by semicolons and process line by line
+    # O arquivo pode estar todo em uma linha, então vamos procurar padrões de data
+    lines = text.split(';')
+    
+    i = 0
+    while i < len(lines):
+        # Procurar por data no formato DD/MM/AA
+        date_match = re.match(r'^(\d{2}/\d{2}/\d{2,4})$', lines[i].strip())
+        if date_match and i + 5 < len(lines):
+            date_str = date_match.group(1)
+            historic = lines[i+1].strip()
+            docto = lines[i+2].strip()
+            credit = lines[i+3].strip().replace('"', '').replace('.', '').replace(',', '.')
+            debit = lines[i+4].strip().replace('"', '').replace('.', '').replace(',', '.')
+            saldo = lines[i+5].strip().replace('"', '').replace('.', '').replace(',', '.')
+            
+            # Skip SALDO ANTERIOR
+            if 'SALDO ANTERIOR' not in historic.upper():
+                # Parse date
+                date = _parse_dates(date_str)
+                
+                # Determine amount (credit is positive, debit is negative)
+                amount = None
+                if credit and credit not in ['', '-']:
+                    try:
+                        amount = float(credit)
+                    except:
+                        pass
+                elif debit and debit not in ['', '-']:
+                    try:
+                        amount = -float(debit)
+                    except:
+                        pass
+                
+                if date and amount is not None:
+                    # Get next line for description if it starts with "Des:"
+                    full_description = historic
+                    if i + 6 < len(lines) and lines[i+6].strip().startswith('Des:'):
+                        full_description += ' ' + lines[i+6].strip()
+                        i += 1  # Skip the Des: line
+                    
+                    rows.append({
+                        'date': date,
+                        'description': full_description,
+                        'amount': amount,
+                        'account': account_name,
+                        'raw': f"{date_str};{historic};{docto};{credit};{debit};{saldo}"
+                    })
+            
+            i += 6  # Move to next transaction
+        else:
+            i += 1
+    
+    df = pd.DataFrame(rows)
+    return finalize(df)
 
 def from_xlsx(file_bytes, account_name):
     """
