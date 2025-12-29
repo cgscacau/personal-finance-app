@@ -656,8 +656,78 @@ else:
                 # IMPORTANTE: Recarrega categorias para garantir dados atualizados
                 cat_names_edit, sub_by_cat_edit = load_categories(uid)
                 
+                # Inicializa valores no session_state se não existirem
+                if f"edit_cat_{row['id']}" not in st.session_state:
+                    st.session_state[f"edit_cat_{row['id']}"] = row.get('category', '') or ''
+                if f"edit_sub_{row['id']}" not in st.session_state:
+                    st.session_state[f"edit_sub_{row['id']}"] = row.get('subcategory', '') or ''
+                
+                st.subheader(f"✏️ Editando: {row['description']}")
+                
+                # SELECTBOXES FORA DO FORM para atualização em tempo real
+                col_cat_outside, col_sub_outside = st.columns(2)
+                
+                with col_cat_outside:
+                    current_cat = st.session_state.get(f"edit_cat_{row['id']}", row.get('category', '') or '')
+                    options_cat = [""] + cat_names_edit
+                    
+                    try:
+                        cat_index = options_cat.index(current_cat) if current_cat in options_cat else 0
+                    except:
+                        cat_index = 0
+                    
+                    selected_cat = st.selectbox(
+                        "Categoria",
+                        options_cat,
+                        index=cat_index,
+                        key=f"cat_selectbox_{row['id']}",
+                        help="Selecione a categoria"
+                    )
+                    
+                    # Atualiza session_state
+                    st.session_state[f"edit_cat_{row['id']}"] = selected_cat
+                
+                with col_sub_outside:
+                    if selected_cat and selected_cat != "":
+                        subs = sub_by_cat_edit.get(selected_cat, [])
+                        current_sub = st.session_state.get(f"edit_sub_{row['id']}", row.get('subcategory', '') or '')
+                        
+                        if subs:
+                            options_sub = ["(sem subcategoria)"] + subs
+                            
+                            try:
+                                sub_index = options_sub.index(current_sub) if current_sub in options_sub else 0
+                            except:
+                                sub_index = 0
+                            
+                            selected_sub = st.selectbox(
+                                "Subcategoria",
+                                options_sub,
+                                index=sub_index,
+                                key=f"sub_selectbox_{row['id']}",
+                                help="Selecione a subcategoria"
+                            )
+                            
+                            # Atualiza session_state
+                            if selected_sub == "(sem subcategoria)":
+                                st.session_state[f"edit_sub_{row['id']}"] = None
+                            else:
+                                st.session_state[f"edit_sub_{row['id']}"] = selected_sub
+                        else:
+                            st.caption(f"ℹ️ '{selected_cat}' não possui subcategorias")
+                            st.session_state[f"edit_sub_{row['id']}"] = None
+                    else:
+                        st.text_input(
+                            "Subcategoria",
+                            value="",
+                            disabled=True,
+                            key=f"sub_disabled_outside_{row['id']}",
+                            help="Selecione uma categoria primeiro"
+                        )
+                        st.session_state[f"edit_sub_{row['id']}"] = None
+                
+                # FORM apenas para os outros campos e botões
                 with st.form(key=f"form_edit_{row['id']}"):
-                    st.subheader(f"✏️ Editando: {row['description']}")
                     
                     col_e1, col_e2 = st.columns([1, 3])
                     
@@ -686,109 +756,10 @@ else:
                             key=f"amount_{row['id']}"
                         )
                     
-                    with col_e4:
-                        # Toggle para usar catálogo ou entrada manual
-                        use_catalog_edit = st.toggle(
-                            "📚 Usar catálogo de categorias",
-                            value=bool(cat_names_edit),
-                            key=f"use_catalog_{row['id']}",
-                            help="Ative para selecionar do catálogo"
-                        )
-                    
-                    # ========== CATEGORIZAÇÃO ==========
-                    col_cat, col_sub = st.columns(2)
-                    
-                    if use_catalog_edit and cat_names_edit:
-                        # MODO CATÁLOGO
-                        with col_cat:
-                            # Opções de categoria
-                            current_cat = row.get('category', '') or ''
-                            options_cat = [""] + cat_names_edit + ["✏️ (digitar manualmente)"]
-                            
-                            # Define o índice inicial baseado na categoria atual
-                            try:
-                                cat_index = options_cat.index(current_cat) if current_cat in options_cat else 0
-                            except:
-                                cat_index = 0
-                            
-                            edit_cat = st.selectbox(
-                                "Categoria",
-                                options_cat,
-                                index=cat_index,
-                                key=f"cat_{row['id']}",
-                                help="Selecione do catálogo ou digite manualmente"
-                            )
-                        
-                        with col_sub:
-                            # Se escolheu digitar manualmente
-                            if edit_cat == "✏️ (digitar manualmente)":
-                                edit_cat = st.text_input(
-                                    "Digite a categoria",
-                                    value=current_cat,
-                                    key=f"cat_manual_{row['id']}"
-                                )
-                                edit_sub = st.text_input(
-                                    "Digite a subcategoria (opcional)",
-                                    value=row.get('subcategory', '') or '',
-                                    key=f"sub_manual_{row['id']}"
-                                )
-                            
-                            elif edit_cat and edit_cat != "":
-                                # Se selecionou uma categoria do catálogo
-                                subs = sub_by_cat_edit.get(edit_cat, [])
-                                current_sub = row.get('subcategory', '') or ''
-                                
-                                if subs:
-                                    options_sub = ["(sem subcategoria)"] + subs
-                                    
-                                    # Define o índice inicial baseado na subcategoria atual
-                                    try:
-                                        sub_index = options_sub.index(current_sub) if current_sub in options_sub else 0
-                                    except:
-                                        sub_index = 0
-                                    
-                                    selected_sub = st.selectbox(
-                                        "Subcategoria",
-                                        options_sub,
-                                        index=sub_index,
-                                        key=f"sub_{row['id']}",
-                                        help="Selecione uma subcategoria"
-                                    )
-                                    
-                                    # Define edit_sub baseado na seleção
-                                    if selected_sub == "(sem subcategoria)":
-                                        edit_sub = None
-                                    else:
-                                        edit_sub = selected_sub
-                                else:
-                                    st.caption(f"ℹ️ '{edit_cat}' não possui subcategorias")
-                                    edit_sub = None
-                            else:
-                                # Nenhuma categoria selecionada - mostra campo vazio
-                                st.text_input(
-                                    "Subcategoria",
-                                    value="",
-                                    disabled=True,
-                                    key=f"sub_disabled_{row['id']}",
-                                    help="Selecione uma categoria primeiro"
-                                )
-                                edit_sub = None
-                    
-                    else:
-                        # MODO MANUAL
-                        with col_cat:
-                            edit_cat = st.text_input(
-                                "Categoria",
-                                value=row.get('category', '') or '',
-                                key=f"cat_{row['id']}"
-                            )
-                        
-                        with col_sub:
-                            edit_sub = st.text_input(
-                                "Subcategoria",
-                                value=row.get('subcategory', '') or '',
-                                key=f"sub_{row['id']}"
-                            )
+                    # Categoria e Subcategoria estão FORA do form (acima)
+                    # Aqui apenas pegamos os valores do session_state
+                    edit_cat = st.session_state.get(f"edit_cat_{row['id']}", '')
+                    edit_sub = st.session_state.get(f"edit_sub_{row['id']}", '')
                     
                     edit_tags = st.text_input(
                         "Tags (separadas por vírgula)",
