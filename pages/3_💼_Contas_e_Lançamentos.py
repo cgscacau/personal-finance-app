@@ -563,33 +563,7 @@ if df.empty:
     st.info("ℹ️ Nenhum lançamento encontrado para esta conta.")
 
 else:
-    # Define colunas a serem exibidas
-    view_cols = ["date", "description", "amount", "category", "subcategory", "tags"]
-    
-    # Garante que todas as colunas existem
-    for col in view_cols:
-        if col not in df.columns:
-            df[col] = None
-    
-    # Formata a coluna de valor para mostrar tipo de transação
-    df_display = df[view_cols].copy()
-    
-    # Exibe tabela
-    st.dataframe(
-        df_display, 
-        use_container_width=True, 
-        height=460,
-        column_config={
-            "date": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
-            "description": st.column_config.TextColumn("Descrição", width="large"),
-            "amount": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
-            "category": st.column_config.TextColumn("Categoria"),
-            "subcategory": st.column_config.TextColumn("Subcategoria"),
-            "tags": st.column_config.ListColumn("Tags"),
-        }
-    )
-    
-    # Estatísticas rápidas
+    # Estatísticas rápidas (exibir primeiro)
     col_stat1, col_stat2, col_stat3 = st.columns(3)
     
     with col_stat1:
@@ -604,38 +578,161 @@ else:
         saldo = df["amount"].sum()
         st.metric("📊 Saldo", f"R$ {saldo:,.2f}")
     
-    # -------------------- EXCLUSÃO DE LANÇAMENTO --------------------
-    with st.expander("🗑️ Excluir lançamento"):
-        st.caption("⚠️ Esta ação não pode ser desfeita.")
+    st.divider()
+    
+    # -------------------- LISTAGEM COM BOTÕES DE EDIÇÃO --------------------
+    st.caption(f"📊 Total de {len(df)} lançamentos")
+    
+    # Paginação (10 por página)
+    items_per_page = 10
+    total_pages = (len(df) - 1) // items_per_page + 1
+    
+    # Controle de página
+    if "current_page" not in st.session_state:
+        st.session_state.current_page = 0
+    
+    # Botões de navegação
+    col_prev, col_page, col_next = st.columns([1, 3, 1])
+    
+    with col_prev:
+        if st.button("⬅️ Anterior", disabled=st.session_state.current_page == 0):
+            st.session_state.current_page -= 1
+            st.rerun()
+    
+    with col_page:
+        st.write(f"**Página {st.session_state.current_page + 1} de {total_pages}**")
+    
+    with col_next:
+        if st.button("Próxima ➡️", disabled=st.session_state.current_page >= total_pages - 1):
+            st.session_state.current_page += 1
+            st.rerun()
+    
+    # Calcula índices da página atual
+    start_idx = st.session_state.current_page * items_per_page
+    end_idx = min(start_idx + items_per_page, len(df))
+    
+    # Exibe lançamentos da página atual
+    for idx in range(start_idx, end_idx):
+        row = df.iloc[idx]
         
-        # Cria DataFrame simplificado para seleção
-        df_small = df[["id", "date", "description", "amount"]].copy()
-        
-        # Cria label legível para cada lançamento
-        df_small["label"] = df_small.apply(
-            lambda r: (
-                f'{str(r["date"])} | '
-                f'{str(r["description"])[:50]} | '
-                f'R$ {float(r["amount"]):.2f}'
-            ),
-            axis=1
-        )
-        
-        # Selectbox para escolher lançamento
-        to_delete_label = st.selectbox(
-            "Selecione o lançamento a excluir",
-            df_small["label"],
-            help="Escolha o lançamento que deseja remover"
-        )
-        
-        # Botão de exclusão
-        if st.button("🗑️ Confirmar exclusão", type="primary"):
-            # Encontra o registro correspondente
-            row = df_small[df_small["label"] == to_delete_label].iloc[0]
+        # Container para cada lançamento
+        with st.container():
+            col1, col2, col3, col4, col5, col6 = st.columns([1.5, 3, 1.5, 2, 2, 1])
             
-            # Exclui do banco
-            success = delete_transaction(row["id"])
+            # Cor do valor (verde para receita, vermelho para despesa)
+            amount_color = "🟢" if row["amount"] > 0 else "🔴"
             
-            if success:
-                st.success("✅ Lançamento excluído com sucesso!")
-                st.rerun()
+            with col1:
+                st.write(f"**{row['date']}**")
+            
+            with col2:
+                st.write(f"{row['description']}")
+            
+            with col3:
+                st.write(f"{amount_color} **R$ {row['amount']:,.2f}**")
+            
+            with col4:
+                cat_display = row.get('category', 'None') or 'None'
+                st.caption(f"📁 {cat_display}")
+            
+            with col5:
+                sub_display = row.get('subcategory', 'None') or 'None'
+                st.caption(f"📂 {sub_display}")
+            
+            with col6:
+                # Botão de edição
+                if st.button("✏️", key=f"edit_{row['id']}", help="Editar lançamento"):
+                    st.session_state[f"editing_{row['id']}"] = True
+                    st.rerun()
+                
+                # Botão de exclusão
+                if st.button("🗑️", key=f"del_{row['id']}", help="Excluir lançamento"):
+                    if delete_transaction(row['id']):
+                        st.success("✅ Lançamento excluído!")
+                        st.rerun()
+            
+            # Formulário de edição (se ativo)
+            if st.session_state.get(f"editing_{row['id']}", False):
+                with st.form(key=f"form_edit_{row['id']}"):
+                    st.subheader(f"✏️ Editando: {row['description']}")
+                    
+                    col_e1, col_e2 = st.columns([1, 3])
+                    
+                    with col_e1:
+                        edit_date = st.date_input(
+                            "Data",
+                            value=pd.to_datetime(row['date']).date() if pd.notna(row['date']) else date_type.today(),
+                            key=f"date_{row['id']}"
+                        )
+                    
+                    with col_e2:
+                        edit_desc = st.text_input(
+                            "Descrição",
+                            value=row['description'] or "",
+                            key=f"desc_{row['id']}"
+                        )
+                    
+                    col_e3, col_e4, col_e5 = st.columns(3)
+                    
+                    with col_e3:
+                        edit_amount = st.number_input(
+                            "Valor",
+                            value=float(row['amount']) if pd.notna(row['amount']) else 0.0,
+                            step=0.01,
+                            format="%.2f",
+                            key=f"amount_{row['id']}"
+                        )
+                    
+                    with col_e4:
+                        edit_cat = st.text_input(
+                            "Categoria",
+                            value=row.get('category', '') or '',
+                            key=f"cat_{row['id']}"
+                        )
+                    
+                    with col_e5:
+                        edit_sub = st.text_input(
+                            "Subcategoria",
+                            value=row.get('subcategory', '') or '',
+                            key=f"sub_{row['id']}"
+                        )
+                    
+                    edit_tags = st.text_input(
+                        "Tags (separadas por vírgula)",
+                        value=", ".join(row.get('tags', []) or []) if isinstance(row.get('tags'), list) else "",
+                        key=f"tags_{row['id']}"
+                    )
+                    
+                    col_btn1, col_btn2 = st.columns(2)
+                    
+                    with col_btn1:
+                        if st.form_submit_button("💾 Salvar alterações", type="primary"):
+                            try:
+                                # Processa tags
+                                tags_list = None
+                                if edit_tags:
+                                    tags_list = [t.strip() for t in edit_tags.split(",") if t.strip()]
+                                
+                                # Atualiza no banco
+                                supa().table("transactions").update({
+                                    "date": str(edit_date),
+                                    "description": edit_desc.strip(),
+                                    "amount": float(edit_amount),
+                                    "category": edit_cat.strip() if edit_cat.strip() else None,
+                                    "subcategory": edit_sub.strip() if edit_sub.strip() else None,
+                                    "tags": tags_list,
+                                }).eq("id", row['id']).execute()
+                                
+                                st.success("✅ Lançamento atualizado!")
+                                del st.session_state[f"editing_{row['id']}"]
+                                st.rerun()
+                            
+                            except Exception as e:
+                                st.error(f"❌ Erro ao atualizar: {e}")
+                    
+                    with col_btn2:
+                        if st.form_submit_button("❌ Cancelar"):
+                            del st.session_state[f"editing_{row['id']}"]
+                            st.rerun()
+            
+            st.divider()
