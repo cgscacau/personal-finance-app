@@ -669,8 +669,13 @@ else:
                 
                 col_cat_select, col_sub_select = st.columns(2)
                 
+                # Callback para resetar subcategoria quando categoria mudar
+                def on_category_change():
+                    # Reseta a subcategoria quando categoria muda
+                    st.session_state[f"edit_sub_{row['id']}"] = ''
+                
                 with col_cat_select:
-                    current_cat = st.session_state[f"edit_cat_{row['id']}"]
+                    current_cat = st.session_state.get(f"edit_cat_{row['id']}", row.get('category', '') or '')
                     options_cat = [""] + cat_names_edit
                     
                     try:
@@ -683,20 +688,17 @@ else:
                         options_cat,
                         index=cat_index,
                         key=f"cat_selectbox_{row['id']}",
-                        help="Selecione a categoria"
+                        help="Selecione a categoria",
+                        on_change=on_category_change  # FORÇA RERUN ao mudar
                     )
                     
                     # Atualiza session_state
                     st.session_state[f"edit_cat_{row['id']}"] = selected_cat
                 
                 with col_sub_select:
-                    # DEBUG
-                    st.caption(f"🔍 DEBUG: selected_cat='{selected_cat}'")
-                    
                     if selected_cat and selected_cat != "":
                         subs = sub_by_cat_edit.get(selected_cat, [])
-                        st.caption(f"🔍 DEBUG: subs={subs}")
-                        current_sub = st.session_state[f"edit_sub_{row['id']}"]
+                        current_sub = st.session_state.get(f"edit_sub_{row['id']}", '')
                         
                         if subs:
                             options_sub = ["(sem subcategoria)"] + subs
