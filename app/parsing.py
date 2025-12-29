@@ -66,62 +66,79 @@ def _parse_bradesco_csv(text, account_name):
     """
     Parser específico para CSV do Bradesco Internet Banking
     Formato: Data;Histórico;Docto.;Crédito (R$);Débito (R$);Saldo (R$)
+    O arquivo vem todo em uma linha, separado por ponto-e-vírgula
     """
     import re
     rows = []
     
-    # Split by semicolons and process line by line
-    # O arquivo pode estar todo em uma linha, então vamos procurar padrões de data
-    lines = text.split(';')
+    # Split by semicolon
+    fields = [f.strip() for f in text.split(';')]
     
-    i = 0
-    while i < len(lines):
-        # Procurar por data no formato DD/MM/AA
-        date_match = re.match(r'^(\d{2}/\d{2}/\d{2,4})$', lines[i].strip())
-        if date_match and i + 5 < len(lines):
-            date_str = date_match.group(1)
-            historic = lines[i+1].strip()
-            docto = lines[i+2].strip()
-            credit = lines[i+3].strip().replace('"', '').replace('.', '').replace(',', '.')
-            debit = lines[i+4].strip().replace('"', '').replace('.', '').replace(',', '.')
-            saldo = lines[i+5].strip().replace('"', '').replace('.', '').replace(',', '.')
-            
-            # Skip SALDO ANTERIOR
-            if 'SALDO ANTERIOR' not in historic.upper():
-                # Parse date
-                date = _parse_dates(date_str)
-                
-                # Determine amount (credit is positive, debit is negative)
-                amount = None
-                if credit and credit not in ['', '-']:
-                    try:
-                        amount = float(credit)
-                    except:
-                        pass
-                elif debit and debit not in ['', '-']:
-                    try:
-                        amount = -float(debit)
-                    except:
-                        pass
-                
-                if date and amount is not None:
-                    # Get next line for description if it starts with "Des:"
-                    full_description = historic
-                    if i + 6 < len(lines) and lines[i+6].strip().startswith('Des:'):
-                        full_description += ' ' + lines[i+6].strip()
-                        i += 1  # Skip the Des: line
-                    
-                    rows.append({
-                        'date': date,
-                        'description': full_description,
-                        'amount': amount,
-                        'account': account_name,
-                        'raw': f"{date_str};{historic};{docto};{credit};{debit};{saldo}"
-                    })
-            
-            i += 6  # Move to next transaction
-        else:
+    # Encontrar o índice onde começam os dados (após o cabeçalho)
+    start_idx = 0
+    for i, field in enumerate(fields):
+        if re.match(r'^\d{2}/\d{2}/\d{2,4}$', field):
+            start_idx = i
+            break
+    
+    # Processar campos em grupos de 6: Data, Histórico, Docto, Crédito, Débito, Saldo
+    i = start_idx
+    while i + 5 < len(fields):
+        date_str = fields[i].strip()
+        
+        # Verificar se é uma data válida
+        if not re.match(r'^\d{2}/\d{2}/\d{2,4}$', date_str):
             i += 1
+            continue
+        
+        historic = fields[i+1].strip()
+        docto = fields[i+2].strip()
+        credit_str = fields[i+3].strip().replace('"', '')
+        debit_str = fields[i+4].strip().replace('"', '')
+        saldo_str = fields[i+5].strip().replace('"', '')
+        
+        # Skip SALDO ANTERIOR
+        if 'SALDO ANTERIOR' in historic.upper():
+            i += 6
+            continue
+        
+        # Parse date
+        date = _parse_dates(date_str)
+        if not date:
+            i += 6
+            continue
+        
+        # Parse amount
+        amount = None
+        try:
+            if credit_str and credit_str not in ['', '-', '0', '0,00']:
+                amount = float(credit_str.replace('.', '').replace(',', '.'))
+            elif debit_str and debit_str not in ['', '-', '0', '0,00']:
+                # Remover o sinal de menos se já estiver (pois já vamos adicionar)
+                debit_clean = debit_str.replace('-', '').replace('.', '').replace(',', '.')
+                amount = -float(debit_clean)
+        except ValueError:
+            pass
+        
+        # Se temos data e valor, adicionar
+        if date and amount is not None and amount != 0:
+            # Verificar se o próximo campo é uma descrição adicional (Des:)
+            full_description = historic
+            if i + 6 < len(fields):
+                next_field = fields[i+6].strip()
+                if next_field.startswith('Des:') or next_field.startswith('Remet.'):
+                    full_description += ' - ' + next_field
+                    i += 1  # Pular este campo extra
+            
+            rows.append({
+                'date': date,
+                'description': full_description,
+                'amount': amount,
+                'account': account_name,
+                'raw': f"{date_str};{historic};{docto};{credit_str};{debit_str};{saldo_str}"
+            })
+        
+        i += 6
     
     df = pd.DataFrame(rows)
     return finalize(df)
