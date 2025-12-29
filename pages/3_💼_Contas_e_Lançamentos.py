@@ -696,10 +696,10 @@ else:
                         )
                     
                     # ========== CATEGORIZAÇÃO ==========
+                    col_cat, col_sub = st.columns(2)
+                    
                     if use_catalog_edit and cat_names_edit:
                         # MODO CATÁLOGO
-                        col_cat, col_sub = st.columns(2)
-                        
                         with col_cat:
                             # Opções de categoria
                             current_cat = row.get('category', '') or ''
@@ -719,24 +719,22 @@ else:
                                 help="Selecione do catálogo ou digite manualmente"
                             )
                         
-                        # Se escolheu digitar manualmente
-                        if edit_cat == "✏️ (digitar manualmente)":
-                            with col_sub:
+                        with col_sub:
+                            # Se escolheu digitar manualmente
+                            if edit_cat == "✏️ (digitar manualmente)":
                                 edit_cat = st.text_input(
                                     "Digite a categoria",
                                     value=current_cat,
                                     key=f"cat_manual_{row['id']}"
                                 )
+                                edit_sub = st.text_input(
+                                    "Digite a subcategoria (opcional)",
+                                    value=row.get('subcategory', '') or '',
+                                    key=f"sub_manual_{row['id']}"
+                                )
                             
-                            edit_sub = st.text_input(
-                                "Digite a subcategoria (opcional)",
-                                value=row.get('subcategory', '') or '',
-                                key=f"sub_manual_{row['id']}"
-                            )
-                        
-                        elif edit_cat and edit_cat != "":
-                            # Se selecionou uma categoria do catálogo
-                            with col_sub:
+                            elif edit_cat and edit_cat != "":
+                                # Se selecionou uma categoria do catálogo
                                 subs = sub_by_cat_edit.get(edit_cat, [])
                                 current_sub = row.get('subcategory', '') or ''
                                 
@@ -763,16 +761,21 @@ else:
                                     else:
                                         edit_sub = selected_sub
                                 else:
-                                    st.info(f"ℹ️ '{edit_cat}' não possui subcategorias")
+                                    st.caption(f"ℹ️ '{edit_cat}' não possui subcategorias")
                                     edit_sub = None
-                        else:
-                            # Nenhuma categoria selecionada
-                            edit_sub = None
+                            else:
+                                # Nenhuma categoria selecionada - mostra campo vazio
+                                st.text_input(
+                                    "Subcategoria",
+                                    value="",
+                                    disabled=True,
+                                    key=f"sub_disabled_{row['id']}",
+                                    help="Selecione uma categoria primeiro"
+                                )
+                                edit_sub = None
                     
                     else:
                         # MODO MANUAL
-                        col_cat, col_sub = st.columns(2)
-                        
                         with col_cat:
                             edit_cat = st.text_input(
                                 "Categoria",
