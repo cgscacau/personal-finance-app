@@ -25,7 +25,7 @@ with col2:
             st.error(f"❌ Erro: {e}")
 
 with col3:
-    if st.button("🌱 Criar Base Limpa", type="primary", help="Deleta tudo e cria 14 categorias organizadas"):
+    if st.button("🌱 Criar Base Limpa", type="primary", help="DELETA TUDO e cria 14 categorias organizadas do zero"):
         # Categorias padrão CORRIGIDAS
         DEFAULT_CATEGORIES = {
             # DESPESAS
@@ -85,6 +85,42 @@ with col3:
         st.success(f"✅ Base criada! {total_cats} categorias e {total_subs} subcategorias!")
         st.balloons()
         st.rerun()
+
+st.divider()
+
+# --- Mostrar categorias atuais (DEBUG) ---
+with st.expander("🔍 Debug: Ver categorias no banco"):
+    try:
+        cats_res = supa().table("categories").select("*").eq("user_id", uid).execute()
+        cats_data = cats_res.data or []
+        
+        if cats_data:
+            df_cats = pd.DataFrame(cats_data)
+            st.write(f"**Total de registros:** {len(cats_data)}")
+            
+            # Separa principais e subcategorias
+            principais = [c for c in cats_data if not c.get('parent_name')]
+            subs = [c for c in cats_data if c.get('parent_name')]
+            
+            st.write(f"**Categorias principais:** {len(principais)}")
+            st.write(f"**Subcategorias:** {len(subs)}")
+            
+            # Mostra estrutura
+            st.dataframe(df_cats[["name", "parent_name", "kind"]], use_container_width=True)
+            
+            # Mostra hierarquia
+            st.write("**Hierarquia:**")
+            for cat in principais:
+                cat_name = cat['name']
+                st.write(f"**{cat_name}**")
+                cat_subs = [s['name'] for s in subs if s.get('parent_name') == cat_name]
+                for sub in cat_subs:
+                    st.write(f"  └─ {sub}")
+        else:
+            st.info("Nenhuma categoria no banco.")
+    
+    except Exception as e:
+        st.error(f"Erro ao carregar: {e}")
 
 st.divider()
 
