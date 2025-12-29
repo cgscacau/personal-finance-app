@@ -24,8 +24,32 @@ def _hash_row(row):
     return h
 
 def from_csv(file_bytes, account_name):
-    df = pd.read_csv(io.BytesIO(file_bytes))
-    return normalize_df(df, account_name)
+    """
+    Parse CSV files with automatic encoding and delimiter detection
+    Tries multiple common encodings and delimiters used by Brazilian banks
+    """
+    encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'windows-1252', 'cp1252']
+    delimiters = [',', ';', '\t', '|']
+    
+    # Try different encoding and delimiter combinations
+    for encoding in encodings:
+        for delimiter in delimiters:
+            try:
+                df = pd.read_csv(io.BytesIO(file_bytes), encoding=encoding, delimiter=delimiter)
+                # Check if we got at least 2 columns (valid CSV)
+                if len(df.columns) > 1:
+                    return normalize_df(df, account_name)
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+            except Exception:
+                continue
+    
+    # If all combinations fail, try with error handling and auto-detection
+    try:
+        df = pd.read_csv(io.BytesIO(file_bytes), encoding='utf-8', errors='ignore', sep=None, engine='python')
+        return normalize_df(df, account_name)
+    except Exception as e:
+        raise ValueError(f"Não foi possível ler o arquivo CSV. Verifique se o formato está correto. Erro: {str(e)}")
 
 def from_xlsx(file_bytes, account_name):
     """
