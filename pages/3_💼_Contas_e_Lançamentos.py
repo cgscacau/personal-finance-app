@@ -656,19 +656,21 @@ else:
                 # IMPORTANTE: Recarrega categorias para garantir dados atualizados
                 cat_names_edit, sub_by_cat_edit = load_categories(uid)
                 
-                # Inicializa valores no session_state se não existirem
+                st.subheader(f"✏️ Editando: {row['description']}")
+                
+                # ========== SELEÇÃO DE CATEGORIA E SUBCATEGORIA (FORA DO FORM) ==========
+                # Isso permite reatividade: ao selecionar categoria, subcategoria aparece imediatamente
+                
+                # Inicializa valores do session_state se não existirem
                 if f"edit_cat_{row['id']}" not in st.session_state:
                     st.session_state[f"edit_cat_{row['id']}"] = row.get('category', '') or ''
                 if f"edit_sub_{row['id']}" not in st.session_state:
                     st.session_state[f"edit_sub_{row['id']}"] = row.get('subcategory', '') or ''
                 
-                st.subheader(f"✏️ Editando: {row['description']}")
+                col_cat_select, col_sub_select = st.columns(2)
                 
-                # SELECTBOXES FORA DO FORM para atualização em tempo real
-                col_cat_outside, col_sub_outside = st.columns(2)
-                
-                with col_cat_outside:
-                    current_cat = st.session_state.get(f"edit_cat_{row['id']}", row.get('category', '') or '')
+                with col_cat_select:
+                    current_cat = st.session_state[f"edit_cat_{row['id']}"]
                     options_cat = [""] + cat_names_edit
                     
                     try:
@@ -687,10 +689,10 @@ else:
                     # Atualiza session_state
                     st.session_state[f"edit_cat_{row['id']}"] = selected_cat
                 
-                with col_sub_outside:
+                with col_sub_select:
                     if selected_cat and selected_cat != "":
                         subs = sub_by_cat_edit.get(selected_cat, [])
-                        current_sub = st.session_state.get(f"edit_sub_{row['id']}", row.get('subcategory', '') or '')
+                        current_sub = st.session_state[f"edit_sub_{row['id']}"]
                         
                         if subs:
                             options_sub = ["(sem subcategoria)"] + subs
@@ -714,19 +716,21 @@ else:
                             else:
                                 st.session_state[f"edit_sub_{row['id']}"] = selected_sub
                         else:
-                            st.caption(f"ℹ️ '{selected_cat}' não possui subcategorias")
+                            st.info(f"ℹ️ '{selected_cat}' não possui subcategorias")
                             st.session_state[f"edit_sub_{row['id']}"] = None
                     else:
                         st.text_input(
                             "Subcategoria",
                             value="",
                             disabled=True,
-                            key=f"sub_disabled_outside_{row['id']}",
+                            key=f"sub_disabled_{row['id']}",
                             help="Selecione uma categoria primeiro"
                         )
                         st.session_state[f"edit_sub_{row['id']}"] = None
                 
-                # FORM apenas para os outros campos e botões
+                st.markdown("---")
+                
+                # ========== FORM PARA OS OUTROS CAMPOS ==========
                 with st.form(key=f"form_edit_{row['id']}"):
                     
                     col_e1, col_e2 = st.columns([1, 3])
@@ -756,7 +760,8 @@ else:
                             key=f"amount_{row['id']}"
                         )
                     
-                    # Categoria e Subcategoria estão FORA do form (acima)
+                    
+                    # Categoria e Subcategoria já foram selecionadas ACIMA (fora do form)
                     # Aqui apenas pegamos os valores do session_state
                     edit_cat = st.session_state.get(f"edit_cat_{row['id']}", '')
                     edit_sub = st.session_state.get(f"edit_sub_{row['id']}", '')
